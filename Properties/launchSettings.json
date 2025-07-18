@@ -1,0 +1,15 @@
+{
+  "profiles": {
+    "Azure_Maps_MCP": {
+      "commandName": "Project",
+      "commandLineArgs": "--port 7174"
+    },
+    "Container (Dockerfile)": {
+      "commandName": "Docker",
+      "launchUrl": "{Scheme}://{ServiceHost}:{ServicePort}",
+      "containerRunArguments": "--init",
+      "httpPort": 34161,
+      "useSSL": false
+    }
+  }
+}

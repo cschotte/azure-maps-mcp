@@ -1,0 +1,8 @@
+{
+	"servers": {
+		"azure-maps-mcp-server": {
+			"url": "http://localhost:7071/runtime/webhooks/mcp/sse",
+			"type": "http"
+		}
+	}
+}
