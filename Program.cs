@@ -6,12 +6,11 @@ using Microsoft.Extensions.Hosting;
 var builder = FunctionsApplication.CreateBuilder(args);
 
 builder.ConfigureFunctionsWebApplication();
-
 builder.EnableMcpToolMetadata();
 builder.ConfigureMcpTool("Azure Maps Tool");
 
 builder.Services
-    .AddApplicationInsightsTelemetryWorkerService()
-    .ConfigureFunctionsApplicationInsights();
+    .AddHttpClient("AzureMaps")
+    .AddStandardResilienceHandler();
 
 builder.Build().Run();
