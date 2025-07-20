@@ -1,0 +1,41 @@
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.5.2.0
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AzureMapsMcp", "AzureMapsMcp.csproj", "{E7145BB0-B6ED-1116-B7F6-38D9AA2BEF2D}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "obj", "obj", "{CA285D67-BB6D-2923-29FD-B5A1C6B8EB24}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Debug", "Debug", "{3DB07252-4F5B-61B7-192E-6C40720DF607}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "net9.0", "net9.0", "{423DF030-E479-861D-2231-1D1BC1956A42}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "WorkerExtensions", "obj\Debug\net9.0\WorkerExtensions\WorkerExtensions.csproj", "{AB8BBC52-ADC2-69F9-59E2-D2BFB6E19E3E}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{E7145BB0-B6ED-1116-B7F6-38D9AA2BEF2D}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{E7145BB0-B6ED-1116-B7F6-38D9AA2BEF2D}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{E7145BB0-B6ED-1116-B7F6-38D9AA2BEF2D}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{E7145BB0-B6ED-1116-B7F6-38D9AA2BEF2D}.Release|Any CPU.Build.0 = Release|Any CPU
+		{AB8BBC52-ADC2-69F9-59E2-D2BFB6E19E3E}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{AB8BBC52-ADC2-69F9-59E2-D2BFB6E19E3E}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{AB8BBC52-ADC2-69F9-59E2-D2BFB6E19E3E}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{AB8BBC52-ADC2-69F9-59E2-D2BFB6E19E3E}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{3DB07252-4F5B-61B7-192E-6C40720DF607} = {CA285D67-BB6D-2923-29FD-B5A1C6B8EB24}
+		{423DF030-E479-861D-2231-1D1BC1956A42} = {3DB07252-4F5B-61B7-192E-6C40720DF607}
+		{AB8BBC52-ADC2-69F9-59E2-D2BFB6E19E3E} = {423DF030-E479-861D-2231-1D1BC1956A42}
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {C282D213-E027-443F-996D-7E837A29A1B0}
+	EndGlobalSection
+EndGlobal
