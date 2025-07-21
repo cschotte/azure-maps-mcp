@@ -2,7 +2,7 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.5.2.0
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AzureMapsMcp", "AzureMapsMcp.csproj", "{E7145BB0-B6ED-1116-B7F6-38D9AA2BEF2D}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Azure Maps MCP Server", "azure-maps-mcp.csproj", "{E7145BB0-B6ED-1116-B7F6-38D9AA2BEF2D}"
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "obj", "obj", "{CA285D67-BB6D-2923-29FD-B5A1C6B8EB24}"
 EndProject

@@ -1,8 +1,15 @@
 {
 	"servers": {
-		"azure-maps-mcp-server": {
-			"type": "sse",
-			"url": "http://localhost:7174/runtime/webhooks/mcp/sse"
-		}
+        "remote-mcp-function": {
+            "type": "sse",
+            "url": "https://azuremaps.navatron.com/runtime/webhooks/mcp/sse",
+            "headers": {
+                "x-functions-key": "zdu4LF-6eUFynSVSWqBYtLoWM8bWjfwb7y172vR6FWoRAzFu6kn7Ww=="
+            }
+        },
+        "local-mcp-function": {
+            "type": "sse",
+            "url": "http://localhost:7174/runtime/webhooks/mcp/sse"
+        }
 	}
 }

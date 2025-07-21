@@ -6,9 +6,9 @@ namespace Azure.Maps.Mcp;
 
 public class AzureMapsTools(IHttpClientFactory httpClientFactory, IConfiguration configuration)
 {
-    [Function(nameof(GeocodingAddress))]
-    public async Task<string> GeocodingAddress(
-        [McpToolTrigger("GeocodingAddress", "Geocode an address using Azure Maps")] ToolInvocationContext context
+    [Function(nameof(GeocodeLocation))]
+    public async Task<string> GeocodeLocation(
+        [McpToolTrigger("Geocode Location", "Geocode a location, such as an address or landmark name using Azure Maps")] ToolInvocationContext context
     )
     {
         // Get subscription key from configuration
@@ -16,11 +16,11 @@ public class AzureMapsTools(IHttpClientFactory httpClientFactory, IConfiguration
             ?? throw new InvalidOperationException("Azure Maps subscription key not configured");
 
         // Get address from arguments
-        var address = context.Arguments?["address"]?.ToString()?.Trim() 
-            ?? throw new ArgumentException("Address parameter is required");
+        var location = context.Arguments?["location"]?.ToString()?.Trim() 
+            ?? throw new ArgumentException("Location parameter is required");
 
         // Build URL and call API
-        var url = $"https://atlas.microsoft.com/geocode?api-version=2025-01-01&query={Uri.EscapeDataString(address)}&subscription-key={subscriptionKey}";
+        var url = $"https://atlas.microsoft.com/geocode?api-version=2025-01-01&query={Uri.EscapeDataString(location)}&subscription-key={subscriptionKey}";
         
         using var httpClient = httpClientFactory.CreateClient("AzureMaps");
         var response = await httpClient.GetAsync(url);
