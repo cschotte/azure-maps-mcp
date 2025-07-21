@@ -11,8 +11,12 @@ public class AzureMapsTools(IHttpClientFactory httpClientFactory, IConfiguration
         // This attribute registers the function as an MCP tool trigger.
         // The name and description help users understand what the tool does.
         [McpToolTrigger(
-            "Geocode Location",
-            "Geocode a location, such as an address or landmark name using Azure Maps")] ToolInvocationContext context
+            "geocode_location",
+            "Geocode a location, such as an address or landmark name using Azure Maps")] ToolInvocationContext context,
+        [McpToolProperty(
+            "location",
+            "string",
+            "address or landmark name")] string location 
     )
     {
         // Get the Azure Maps subscription key from configuration.
@@ -21,18 +25,11 @@ public class AzureMapsTools(IHttpClientFactory httpClientFactory, IConfiguration
         var subscriptionKey = configuration["AZURE_MAPS_SUBSCRIPTION_KEY"] 
             ?? throw new InvalidOperationException("Azure Maps subscription key not configured");
 
-        // Get the location (address or landmark) from the function arguments.
-        // This is the value the user wants to geocode.
-        // If the location is missing, throw an error to alert the user.
-        var location = context.Arguments?["location"]?.ToString()?.Trim() 
-            ?? throw new ArgumentException("Location parameter is required");
-
         // Build the URL for the Azure Maps geocoding API.
-        // The query parameter contains the address, and the subscription key authenticates the request.
+        // The query parameter contains the location, and the subscription key authenticates the request.
         var url = $"https://atlas.microsoft.com/geocode?api-version=2025-01-01&query={Uri.EscapeDataString(location)}&subscription-key={subscriptionKey}";
 
         // Create an HTTP client to send the request.
-        // The client is configured for Azure Maps.
         using var httpClient = httpClientFactory.CreateClient("AzureMaps");
 
         // Send the GET request to the Azure Maps API.
