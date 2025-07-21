@@ -1,3 +1,4 @@
+using Azure.Maps.Mcp.Services;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Azure.Functions.Worker.Builder;
 using Microsoft.Extensions.DependencyInjection;
@@ -12,5 +13,7 @@ builder.ConfigureMcpTool("Azure Maps Tool"); // Register the tool name exposed t
 builder.Services
     .AddHttpClient("AzureMaps") // Named http client for Azure Maps
     .AddStandardResilienceHandler(); // Optional: adds resilience policies
+
+builder.Services.AddSingleton<IAzureMapsService, AzureMapsService>();
 
 builder.Build().Run();
