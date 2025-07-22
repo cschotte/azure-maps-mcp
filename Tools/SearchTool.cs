@@ -4,11 +4,11 @@ using Azure.Maps.Mcp.Services;
 
 namespace Azure.Maps.Mcp.Tools;
 
-public class SearchTools
+public class SearchTool
 {
     private readonly IAzureMapsService _azureMapsService;
 
-    public SearchTools(IAzureMapsService azureMapsService)
+    public SearchTool(IAzureMapsService azureMapsService)
     {
         _azureMapsService = azureMapsService;
     }

@@ -43,4 +43,37 @@ public class AzureMapsService : IAzureMapsService
 
         return await response.Content.ReadAsStringAsync();
     }
+
+    public async Task<ImageResponse> CallImageApiAsync(string endpoint, string apiVersion, Dictionary<string, string>? parameters = null)
+    {
+        var queryParams = new List<string>
+        {
+            $"api-version={apiVersion}",
+            $"subscription-key={_subscriptionKey}"
+        };
+
+        if (parameters != null)
+        {
+            foreach (var param in parameters)
+            {
+                queryParams.Add($"{param.Key}={param.Value}");
+            }
+        }
+
+        var url = $"https://atlas.microsoft.com/{endpoint}?{string.Join("&", queryParams)}";
+
+        using var httpClient = _httpClientFactory.CreateClient("AzureMaps");
+        var response = await httpClient.GetAsync(url);
+
+        if (!response.IsSuccessStatusCode)
+        {
+            var error = await response.Content.ReadAsStringAsync();
+            throw new HttpRequestException($"Azure Maps API failed with status {response.StatusCode}: {error}");
+        }
+
+        var imageData = await response.Content.ReadAsByteArrayAsync();
+        var contentType = response.Content.Headers.ContentType?.MediaType ?? "image/png";
+
+        return new ImageResponse(imageData, contentType);
+    }
 }
