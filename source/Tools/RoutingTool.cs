@@ -1,0 +1,523 @@
+// Copyright (c) 2025 Clemens Schotte
+// Licensed under the MIT License. See LICENSE file in the project root for full license information.
+
+using Microsoft.Azure.Functions.Worker;
+using Microsoft.Azure.Functions.Worker.Extensions.Mcp;
+using Microsoft.Extensions.Logging;
+using Azure.Core.GeoJson;
+using Azure.Maps.Mcp.Services;
+using Azure.Maps.Routing;
+using System.Text.Json;
+
+namespace Azure.Maps.Mcp.Tools;
+
+/// <summary>
+/// Azure Maps Routing Tool providing route directions, route matrix, and route range capabilities
+/// </summary>
+public class RoutingTool(IAzureMapsService azureMapsService, ILogger<RoutingTool> logger)
+{
+    private readonly MapsRoutingClient _routingClient = azureMapsService.RoutingClient;
+
+    /// <summary>
+    /// Calculate route directions between coordinates
+    /// </summary>
+    [Function(nameof(GetRouteDirections))]
+    public async Task<string> GetRouteDirections(
+        [McpToolTrigger(
+            "get_route_directions",
+            "Calculate route directions between two or more coordinates. Returns detailed route information including distance, travel time, and turn-by-turn instructions."
+        )] ToolInvocationContext context,
+        [McpToolProperty(
+            "coordinates",
+            "array",
+            "Array of coordinate objects with latitude and longitude. Must include at least origin and destination. Format: [{\"latitude\": 47.6062, \"longitude\": -122.3321}, {\"latitude\": 47.6205, \"longitude\": -122.3493}]"
+        )] string coordinates,
+        [McpToolProperty(
+            "travelMode",
+            "string",
+            "Mode of travel: 'car' (default), 'truck', 'taxi', 'bus', 'van', 'motorcycle', 'bicycle', 'pedestrian'"
+        )] string travelMode = "car",
+        [McpToolProperty(
+            "routeType",
+            "string",
+            "Type of route optimization: 'fastest' (default), 'shortest', 'eco', 'thrilling'"
+        )] string routeType = "fastest",
+        [McpToolProperty(
+            "avoidTolls",
+            "boolean",
+            "Whether to avoid toll roads (default: false)"
+        )] bool avoidTolls = false,
+        [McpToolProperty(
+            "avoidHighways",
+            "boolean",
+            "Whether to avoid highways (default: false)"
+        )] bool avoidHighways = false
+    )
+    {
+        try
+        {
+            var coordinateList = JsonSerializer.Deserialize<List<Dictionary<string, double>>>(coordinates);
+            
+            if (coordinateList == null || coordinateList.Count < 2)
+            {
+                return JsonSerializer.Serialize(new { error = "At least 2 coordinates (origin and destination) are required" });
+            }
+
+            var routePoints = new List<GeoPosition>();
+            foreach (var coord in coordinateList)
+            {
+                if (!coord.ContainsKey("latitude") || !coord.ContainsKey("longitude"))
+                {
+                    return JsonSerializer.Serialize(new { error = "Each coordinate must have 'latitude' and 'longitude' properties" });
+                }
+
+                var lat = coord["latitude"];
+                var lon = coord["longitude"];
+
+                if (lat < -90 || lat > 90 || lon < -180 || lon > 180)
+                {
+                    return JsonSerializer.Serialize(new { error = "Invalid coordinate values. Latitude must be between -90 and 90, longitude between -180 and 180" });
+                }
+
+                routePoints.Add(new GeoPosition(lon, lat));
+            }
+
+            logger.LogInformation("Calculating route directions for {Count} points", routePoints.Count);
+
+            // Parse travel mode
+            if (!Enum.TryParse<TravelMode>(travelMode, true, out var parsedTravelMode))
+            {
+                return JsonSerializer.Serialize(new { error = $"Invalid travel mode '{travelMode}'. Valid options: car, truck, taxi, bus, van, motorcycle, bicycle, pedestrian" });
+            }
+
+            // Parse route type
+            if (!Enum.TryParse<RouteType>(routeType, true, out var parsedRouteType))
+            {
+                return JsonSerializer.Serialize(new { error = $"Invalid route type '{routeType}'. Valid options: fastest, shortest, eco, thrilling" });
+            }
+
+            var options = new RouteDirectionOptions()
+            {
+                TravelMode = parsedTravelMode,
+                RouteType = parsedRouteType,
+                UseTrafficData = true,
+                ComputeBestWaypointOrder = routePoints.Count > 2,
+            };
+
+            // Configure avoidance options
+            if (avoidTolls) options.Avoid.Add(RouteAvoidType.TollRoads);
+            if (avoidHighways) options.Avoid.Add(RouteAvoidType.Motorways);
+
+            var routeQuery = new RouteDirectionQuery(routePoints, options);
+            var response = await _routingClient.GetDirectionsAsync(routeQuery);
+
+            if (response.Value?.Routes != null && response.Value.Routes.Any())
+            {
+                var route = response.Value.Routes.First();
+                
+                var result = new
+                {
+                    Summary = new
+                    {
+                        DistanceInMeters = route.Summary.LengthInMeters,
+                        DistanceInKilometers = route.Summary.LengthInMeters.HasValue 
+                            ? Math.Round((double)route.Summary.LengthInMeters.Value / 1000.0, 2) 
+                            : (double?)null,
+                        TravelTimeInSeconds = route.Summary.TravelTimeDuration?.TotalSeconds,
+                        TravelTimeFormatted = route.Summary.TravelTimeDuration?.ToString(@"hh\:mm\:ss"),
+                        DepartureTime = route.Summary.DepartureTime,
+                        ArrivalTime = route.Summary.ArrivalTime
+                    },
+                    Instructions = route.Guidance?.Instructions?.Select(instruction => new
+                    {
+                        Text = instruction.Message,
+                        DistanceInMeters = instruction.RouteOffsetInMeters,
+                        TravelTimeInSeconds = instruction.TravelTimeInSeconds,
+                        ManeuverType = instruction.Maneuver?.ToString(),
+                        TurnAngleInDegrees = instruction.TurnAngleInDegrees,
+                        RoadNumbers = instruction.RoadNumbers,
+                        SignpostText = instruction.SignpostText
+                    }).ToList(),
+                    RouteGeometry = route.Legs?.SelectMany(leg => leg.Points ?? new List<GeoPosition>())
+                        .Select(point => new { Latitude = point.Latitude, Longitude = point.Longitude }).ToList(),
+                    Legs = route.Legs?.Select((leg, index) => new
+                    {
+                        LegIndex = index,
+                        Summary = new
+                        {
+                            DistanceInMeters = leg.Summary.LengthInMeters,
+                            TravelTimeInSeconds = leg.Summary.TravelTimeInSeconds,
+                            TrafficDelayInSeconds = leg.Summary.TrafficDelayInSeconds
+                        }
+                    }).ToList()
+                };
+
+                logger.LogInformation("Successfully calculated route: {Distance}km, {Time}", 
+                    result.Summary.DistanceInKilometers, 
+                    result.Summary.TravelTimeFormatted);
+
+                return JsonSerializer.Serialize(new { success = true, result }, new JsonSerializerOptions { WriteIndented = true });
+            }
+
+            logger.LogWarning("No route found between the specified coordinates");
+            return JsonSerializer.Serialize(new { success = false, message = "No route found between the specified coordinates" });
+        }
+        catch (JsonException ex)
+        {
+            logger.LogError(ex, "Invalid JSON format for coordinates");
+            return JsonSerializer.Serialize(new { error = "Invalid coordinates format. Expected JSON array of coordinate objects." });
+        }
+        catch (RequestFailedException ex)
+        {
+            logger.LogError(ex, "Azure Maps API error during route calculation: {Message}", ex.Message);
+            return JsonSerializer.Serialize(new { error = $"API Error: {ex.Message}" });
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Unexpected error during route calculation");
+            return JsonSerializer.Serialize(new { error = "An unexpected error occurred" });
+        }
+    }
+
+    /// <summary>
+    /// Calculate travel times and distances between multiple origins and destinations
+    /// </summary>
+    [Function(nameof(GetRouteMatrix))]
+    public async Task<string> GetRouteMatrix(
+        [McpToolTrigger(
+            "get_route_matrix",
+            "Calculate travel times and distances between multiple origins and destinations. Useful for optimization scenarios like delivery routing or finding the closest locations."
+        )] ToolInvocationContext context,
+        [McpToolProperty(
+            "origins",
+            "array",
+            "Array of origin coordinate objects. Format: [{\"latitude\": 47.6062, \"longitude\": -122.3321}, {\"latitude\": 47.6205, \"longitude\": -122.3493}]"
+        )] string origins,
+        [McpToolProperty(
+            "destinations",
+            "array",
+            "Array of destination coordinate objects. Format: [{\"latitude\": 47.6062, \"longitude\": -122.3321}, {\"latitude\": 47.6205, \"longitude\": -122.3493}]"
+        )] string destinations,
+        [McpToolProperty(
+            "travelMode",
+            "string",
+            "Mode of travel: 'car' (default), 'truck', 'taxi', 'bus', 'van', 'motorcycle', 'bicycle', 'pedestrian'"
+        )] string travelMode = "car",
+        [McpToolProperty(
+            "routeType",
+            "string",
+            "Type of route optimization: 'fastest' (default), 'shortest', 'eco'"
+        )] string routeType = "fastest"
+    )
+    {
+        try
+        {
+            var originsList = JsonSerializer.Deserialize<List<Dictionary<string, double>>>(origins);
+            var destinationsList = JsonSerializer.Deserialize<List<Dictionary<string, double>>>(destinations);
+            
+            if (originsList == null || originsList.Count == 0)
+            {
+                return JsonSerializer.Serialize(new { error = "At least one origin coordinate is required" });
+            }
+
+            if (destinationsList == null || destinationsList.Count == 0)
+            {
+                return JsonSerializer.Serialize(new { error = "At least one destination coordinate is required" });
+            }
+
+            // Convert to GeoPosition lists
+            var originPoints = new List<GeoPosition>();
+            var destinationPoints = new List<GeoPosition>();
+
+            foreach (var coord in originsList)
+            {
+                if (!coord.ContainsKey("latitude") || !coord.ContainsKey("longitude"))
+                {
+                    return JsonSerializer.Serialize(new { error = "Each origin coordinate must have 'latitude' and 'longitude' properties" });
+                }
+
+                var lat = coord["latitude"];
+                var lon = coord["longitude"];
+
+                if (lat < -90 || lat > 90 || lon < -180 || lon > 180)
+                {
+                    return JsonSerializer.Serialize(new { error = "Invalid origin coordinate values" });
+                }
+
+                originPoints.Add(new GeoPosition(lon, lat));
+            }
+
+            foreach (var coord in destinationsList)
+            {
+                if (!coord.ContainsKey("latitude") || !coord.ContainsKey("longitude"))
+                {
+                    return JsonSerializer.Serialize(new { error = "Each destination coordinate must have 'latitude' and 'longitude' properties" });
+                }
+
+                var lat = coord["latitude"];
+                var lon = coord["longitude"];
+
+                if (lat < -90 || lat > 90 || lon < -180 || lon > 180)
+                {
+                    return JsonSerializer.Serialize(new { error = "Invalid destination coordinate values" });
+                }
+
+                destinationPoints.Add(new GeoPosition(lon, lat));
+            }
+
+            logger.LogInformation("Calculating route matrix for {OriginCount} origins and {DestinationCount} destinations", 
+                originPoints.Count, destinationPoints.Count);
+
+            // Parse travel mode
+            if (!Enum.TryParse<TravelMode>(travelMode, true, out var parsedTravelMode))
+            {
+                return JsonSerializer.Serialize(new { error = $"Invalid travel mode '{travelMode}'. Valid options: car, truck, taxi, bus, van, motorcycle, bicycle, pedestrian" });
+            }
+
+            // Parse route type
+            if (!Enum.TryParse<RouteType>(routeType, true, out var parsedRouteType))
+            {
+                return JsonSerializer.Serialize(new { error = $"Invalid route type '{routeType}'. Valid options: fastest, shortest, eco" });
+            }
+
+            var matrixQuery = new RouteMatrixQuery
+            {
+                Origins = originPoints,
+                Destinations = destinationPoints
+            };
+
+            var options = new RouteMatrixOptions(matrixQuery)
+            {
+                TravelMode = parsedTravelMode,
+                RouteType = parsedRouteType,
+                UseTrafficData = true
+            };
+
+            var response = await _routingClient.GetImmediateRouteMatrixAsync(options);
+
+            if (response.Value?.Matrix != null)
+            {
+                var matrix = response.Value.Matrix;
+                var results = new List<object>();
+
+                for (int i = 0; i < matrix.Count; i++)
+                {
+                    var row = matrix[i];
+                    for (int j = 0; j < row.Count; j++)
+                    {
+                        var cell = row[j];
+                        
+                        results.Add(new
+                        {
+                            OriginIndex = i,
+                            DestinationIndex = j,
+                            OriginCoordinate = new 
+                            { 
+                                Latitude = originPoints[i].Latitude, 
+                                Longitude = originPoints[i].Longitude 
+                            },
+                            DestinationCoordinate = new 
+                            { 
+                                Latitude = destinationPoints[j].Latitude, 
+                                Longitude = destinationPoints[j].Longitude 
+                            },
+                            Response = cell.Summary != null ? new
+                            {
+                                DistanceInMeters = cell.Summary.LengthInMeters,
+                                DistanceInKilometers = cell.Summary.LengthInMeters.HasValue 
+                                    ? Math.Round((double)cell.Summary.LengthInMeters.Value / 1000.0, 2) 
+                                    : (double?)null,
+                                TravelTimeInSeconds = cell.Summary.TravelTimeInSeconds,
+                                TravelTimeFormatted = cell.Summary.TravelTimeInSeconds.HasValue
+                                    ? TimeSpan.FromSeconds(cell.Summary.TravelTimeInSeconds.Value).ToString(@"hh\:mm\:ss")
+                                    : null,
+                                TrafficDelayInSeconds = cell.Summary.TrafficDelayInSeconds,
+                                DepartureTime = cell.Summary.DepartureTime,
+                                ArrivalTime = cell.Summary.ArrivalTime
+                            } : null,
+                            Error = cell.Summary == null ? "Route not found" : null
+                        });
+                    }
+                }
+
+                var result = new
+                {
+                    Summary = new
+                    {
+                        OriginCount = originPoints.Count,
+                        DestinationCount = destinationPoints.Count,
+                        TotalCombinations = results.Count,
+                        SuccessfulRoutes = results.Count(r => ((dynamic)r).Response != null),
+                        FailedRoutes = results.Count(r => ((dynamic)r).Response == null)
+                    },
+                    Matrix = results
+                };
+
+                logger.LogInformation("Successfully calculated route matrix: {Successful}/{Total} routes", 
+                    result.Summary.SuccessfulRoutes, result.Summary.TotalCombinations);
+
+                return JsonSerializer.Serialize(new { success = true, result }, new JsonSerializerOptions { WriteIndented = true });
+            }
+
+            logger.LogWarning("No route matrix data returned");
+            return JsonSerializer.Serialize(new { success = false, message = "No route matrix data returned" });
+        }
+        catch (JsonException ex)
+        {
+            logger.LogError(ex, "Invalid JSON format for coordinates");
+            return JsonSerializer.Serialize(new { error = "Invalid coordinates format. Expected JSON array of coordinate objects." });
+        }
+        catch (RequestFailedException ex)
+        {
+            logger.LogError(ex, "Azure Maps API error during route matrix calculation: {Message}", ex.Message);
+            return JsonSerializer.Serialize(new { error = $"API Error: {ex.Message}" });
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Unexpected error during route matrix calculation");
+            return JsonSerializer.Serialize(new { error = "An unexpected error occurred" });
+        }
+    }
+
+    /// <summary>
+    /// Calculate the area reachable within a given time or distance from a starting point
+    /// </summary>
+    [Function(nameof(GetRouteRange))]
+    public async Task<string> GetRouteRange(
+        [McpToolTrigger(
+            "get_route_range",
+            "Calculate the area reachable within a given time or distance from a starting point. Returns a polygon representing the reachable area (isochrone)."
+        )] ToolInvocationContext context,
+        [McpToolProperty(
+            "latitude",
+            "number",
+            "Starting point latitude coordinate (e.g., 47.6062)"
+        )] double latitude,
+        [McpToolProperty(
+            "longitude",
+            "number",
+            "Starting point longitude coordinate (e.g., -122.3321)"
+        )] double longitude,
+        [McpToolProperty(
+            "timeBudgetInSeconds",
+            "number",
+            "Time budget in seconds for reachability (e.g., 1800 for 30 minutes). Use either this or distanceBudgetInMeters, not both."
+        )] int? timeBudgetInSeconds = null,
+        [McpToolProperty(
+            "distanceBudgetInMeters",
+            "number",
+            "Distance budget in meters for reachability (e.g., 5000 for 5km). Use either this or timeBudgetInSeconds, not both."
+        )] int? distanceBudgetInMeters = null,
+        [McpToolProperty(
+            "travelMode",
+            "string",
+            "Mode of travel: 'car' (default), 'truck', 'taxi', 'bus', 'van', 'motorcycle', 'bicycle', 'pedestrian'"
+        )] string travelMode = "car",
+        [McpToolProperty(
+            "routeType",
+            "string",
+            "Type of route optimization: 'fastest' (default), 'shortest'"
+        )] string routeType = "fastest"
+    )
+    {
+        try
+        {
+            if (latitude < -90 || latitude > 90)
+            {
+                return JsonSerializer.Serialize(new { error = "Latitude must be between -90 and 90 degrees" });
+            }
+
+            if (longitude < -180 || longitude > 180)
+            {
+                return JsonSerializer.Serialize(new { error = "Longitude must be between -180 and 180 degrees" });
+            }
+
+            if (!timeBudgetInSeconds.HasValue && !distanceBudgetInMeters.HasValue)
+            {
+                return JsonSerializer.Serialize(new { error = "Either timeBudgetInSeconds or distanceBudgetInMeters must be specified" });
+            }
+
+            if (timeBudgetInSeconds.HasValue && distanceBudgetInMeters.HasValue)
+            {
+                return JsonSerializer.Serialize(new { error = "Specify either timeBudgetInSeconds or distanceBudgetInMeters, not both" });
+            }
+
+            var centerPoint = new GeoPosition(longitude, latitude);
+
+            logger.LogInformation("Calculating route range from coordinates: {Latitude}, {Longitude}", latitude, longitude);
+
+            // Parse travel mode
+            if (!Enum.TryParse<TravelMode>(travelMode, true, out var parsedTravelMode))
+            {
+                return JsonSerializer.Serialize(new { error = $"Invalid travel mode '{travelMode}'. Valid options: car, truck, taxi, bus, van, motorcycle, bicycle, pedestrian" });
+            }
+
+            // Parse route type
+            if (!Enum.TryParse<RouteType>(routeType, true, out var parsedRouteType))
+            {
+                return JsonSerializer.Serialize(new { error = $"Invalid route type '{routeType}'. Valid options: fastest, shortest" });
+            }
+
+            var options = new RouteRangeOptions(centerPoint)
+            {
+                TravelMode = parsedTravelMode,
+                RouteType = parsedRouteType,
+                UseTrafficData = true
+            };
+
+            if (timeBudgetInSeconds.HasValue)
+            {
+                options.TimeBudget = TimeSpan.FromSeconds(timeBudgetInSeconds.Value);
+            }
+            else if (distanceBudgetInMeters.HasValue)
+            {
+                options.DistanceBudgetInMeters = distanceBudgetInMeters.Value;
+            }
+
+            var response = await _routingClient.GetRouteRangeAsync(options);
+
+            if (response.Value?.ReachableRange != null)
+            {
+                var reachableRange = response.Value.ReachableRange;
+                
+                var result = new
+                {
+                    Center = new
+                    {
+                        Latitude = reachableRange.Center.Latitude,
+                        Longitude = reachableRange.Center.Longitude
+                    },
+                    Budget = timeBudgetInSeconds.HasValue 
+                        ? (object)new { TimeBudgetInSeconds = timeBudgetInSeconds.Value, TimeBudgetFormatted = TimeSpan.FromSeconds(timeBudgetInSeconds.Value).ToString(@"hh\:mm\:ss") }
+                        : new { DistanceBudgetInMeters = distanceBudgetInMeters!.Value, DistanceBudgetInKilometers = Math.Round(distanceBudgetInMeters.Value / 1000.0, 2) },
+                    TravelMode = travelMode,
+                    RouteType = routeType,
+                    Boundary = reachableRange.Boundary?.Select(point => new
+                    {
+                        Latitude = point.Latitude,
+                        Longitude = point.Longitude
+                    }).ToList(),
+                    BoundaryPointCount = reachableRange.Boundary?.Count ?? 0
+                };
+
+                logger.LogInformation("Successfully calculated route range with {PointCount} boundary points", 
+                    result.BoundaryPointCount);
+
+                return JsonSerializer.Serialize(new { success = true, result }, new JsonSerializerOptions { WriteIndented = true });
+            }
+
+            logger.LogWarning("No reachable range data returned for coordinates: {Latitude}, {Longitude}", latitude, longitude);
+            return JsonSerializer.Serialize(new { success = false, message = "No reachable range data returned" });
+        }
+        catch (RequestFailedException ex)
+        {
+            logger.LogError(ex, "Azure Maps API error during route range calculation: {Message}", ex.Message);
+            return JsonSerializer.Serialize(new { error = $"API Error: {ex.Message}" });
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Unexpected error during route range calculation");
+            return JsonSerializer.Serialize(new { error = "An unexpected error occurred" });
+        }
+    }
+}

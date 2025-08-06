@@ -1,3 +1,6 @@
+// Copyright (c) 2025 Clemens Schotte
+// Licensed under the MIT License. See LICENSE file in the project root for full license information.
+
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Azure.Functions.Worker.Extensions.Mcp;
 using Microsoft.Extensions.Logging;
@@ -10,7 +13,7 @@ using System.Text.Json;
 namespace Azure.Maps.Mcp.Tools;
 
 /// <summary>
-/// Azure Maps Search Tool providing geocoding, reverse geocoding, and POI search capabilities
+/// Azure Maps Search Tool providing geocoding, reverse geocoding, and administrative boundary polygon capabilities
 /// </summary>
 public class SearchTool(IAzureMapsService azureMapsService, ILogger<SearchTool> logger)
 {

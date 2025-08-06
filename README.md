@@ -1,36 +1,47 @@
 # Azure Maps MCP Server
 
-A Model Context Protocol (MCP) server implementation that provides Azure Maps functionality as tools for Large Language Models (LLMs). This server exposes Azure Maps Search API capabilities including geocoding, reverse geocoding, and administrative boundary polygon retrieval.
+A Model Context Protocol (MCP) server implementation that provides **Azure Maps** functionality as tools for Large Language Models (LLMs). This server exposes the full range of Azure Maps services including search, routing, rendering, and geolocation capabilities.
 
 ## Overview
 
-This project implements an MCP server using Azure Functions that integrates with Azure Maps services. It allows LLMs to perform geographic operations such as:
+This project implements an MCP server using Azure Functions that integrates with Azure Maps services. It allows LLMs to perform a wide range of geographic operations including:
 
-- **Geocoding**: Convert addresses or place names to latitude/longitude coordinates
-- **Reverse Geocoding**: Convert coordinates to street addresses
-- **Polygon Boundaries**: Retrieve administrative boundary polygons for locations (cities, postal codes, states, etc.)
+- **Geocoding & Search**: Convert addresses or place names to coordinates and vice versa
+- **Routing**: Calculate routes, travel times, and reachable areas
+- **Map Rendering**: Generate map tiles and static map images
+- **Geolocation**: Determine country codes and location info from IP addresses
 
 ## Features
 
-### 🗺️ Geocoding
-Convert street addresses, landmarks, or place names to geographic coordinates with detailed address information including:
-- Formatted addresses
-- Street numbers and names
-- Neighborhoods, postal codes
-- Localities and country regions
-- Confidence scores and match codes
+### 🗺️ Search & Geocoding
+Convert street addresses, landmarks, or place names to geographic coordinates with detailed address information:
+- **Geocoding**: Address → Coordinates with detailed properties
+- **Reverse Geocoding**: Coordinates → Human-readable addresses
+- **Administrative Boundaries**: Retrieve polygon boundaries for cities, postal codes, states, countries
+- Confidence scores, match codes, and comprehensive address details
 
-### 🔄 Reverse Geocoding
-Convert latitude/longitude coordinates back to human-readable addresses with comprehensive location details.
+### �️ Routing & Navigation
+Calculate optimal routes and analyze travel patterns:
+- **Route Directions**: Turn-by-turn navigation between multiple points
+- **Route Matrix**: Calculate travel times/distances between multiple origins and destinations
+- **Route Range (Isochrone)**: Find areas reachable within time or distance budgets
+- Support for multiple travel modes (car, truck, bicycle, pedestrian, etc.)
+- Traffic-aware routing and route optimization options
 
-### 🌍 Administrative Boundaries
-Retrieve polygon boundaries for various administrative levels:
-- **Locality** (cities)
-- **Postal Code** areas
-- **Administrative Districts** (states/provinces, counties)
-- **Country Regions**
+### 🖼️ Map Rendering & Visualization
+Generate visual map content and tiles:
+- **Map Tiles**: Retrieve individual map tiles for custom mapping applications
+- **Static Map Images**: Generate map snapshots with custom markers and paths
+- **Tile Metadata**: Access tile set information and coordinate systems
+- **Tile Coordinates**: Convert between geographic and tile coordinate systems
+- Support for road, satellite, and hybrid map styles
 
-Support for different resolution levels (small, medium, large) to control polygon detail.
+### 🌐 Geolocation & IP Analysis
+Determine geographic information from IP addresses:
+- **IP Geolocation**: Get country codes from IPv4/IPv6 addresses
+- **Batch IP Processing**: Process multiple IP addresses efficiently
+- **IP Validation**: Validate IP address formats and get technical details
+- Support for both public and private IP address analysis
 
 ## Prerequisites
 
@@ -129,9 +140,11 @@ func azure functionapp publish your-function-app-name
 
 ## Usage
 
-Once running, the MCP server exposes the following tools:
+Once running, the MCP server exposes the following tools organized by service category:
 
-### Geocoding
+### 🗺️ Search Tools
+
+#### Geocoding
 ```json
 {
   "name": "geocoding",
@@ -143,9 +156,7 @@ Once running, the MCP server exposes the following tools:
 }
 ```
 
-**Example**: Geocode "Eiffel Tower, Paris"
-
-### Reverse Geocoding
+#### Reverse Geocoding
 ```json
 {
   "name": "reverse_geocoding", 
@@ -157,9 +168,7 @@ Once running, the MCP server exposes the following tools:
 }
 ```
 
-**Example**: Get address for coordinates 48.8584, 2.2945
-
-### Get Polygon
+#### Get Polygon
 ```json
 {
   "name": "get_polygon",
@@ -173,7 +182,144 @@ Once running, the MCP server exposes the following tools:
 }
 ```
 
-**Example**: Get city boundary polygon for Seattle coordinates
+### 🛣️ Routing Tools
+
+#### Get Route Directions
+```json
+{
+  "name": "get_route_directions",
+  "description": "Calculate route directions between coordinates with turn-by-turn instructions",
+  "parameters": {
+    "coordinates": "array - Array of lat/lng objects for waypoints",
+    "travelMode": "string - car|truck|bicycle|pedestrian (default: car)",
+    "routeType": "string - fastest|shortest|eco (default: fastest)",
+    "avoidTolls": "boolean - Avoid toll roads",
+    "avoidHighways": "boolean - Avoid highways"
+  }
+}
+```
+
+#### Get Route Matrix
+```json
+{
+  "name": "get_route_matrix",
+  "description": "Calculate travel times and distances between multiple origins and destinations",
+  "parameters": {
+    "origins": "array - Array of origin coordinate objects",
+    "destinations": "array - Array of destination coordinate objects",
+    "travelMode": "string - car|truck|bicycle|pedestrian (default: car)",
+    "routeType": "string - fastest|shortest|eco (default: fastest)"
+  }
+}
+```
+
+#### Get Route Range
+```json
+{
+  "name": "get_route_range",
+  "description": "Calculate reachable area within time or distance budget (isochrone)",
+  "parameters": {
+    "latitude": "number - Starting latitude",
+    "longitude": "number - Starting longitude",
+    "timeBudgetInSeconds": "number - Time budget (OR distanceBudgetInMeters)",
+    "distanceBudgetInMeters": "number - Distance budget (OR timeBudgetInSeconds)",
+    "travelMode": "string - car|truck|bicycle|pedestrian (default: car)"
+  }
+}
+```
+
+### 🖼️ Rendering Tools
+
+#### Get Map Tile Set Metadata
+```json
+{
+  "name": "get_map_tileset_metadata",
+  "description": "Get metadata for map tile sets including endpoints and zoom levels",
+  "parameters": {
+    "tileSetId": "string - microsoft.base.road|microsoft.imagery|microsoft.base.hybrid"
+  }
+}
+```
+
+#### Get Map Tile
+```json
+{
+  "name": "get_map_tile",
+  "description": "Get a map tile image as base64-encoded PNG",
+  "parameters": {
+    "latitude": "number - Tile center latitude",
+    "longitude": "number - Tile center longitude",
+    "zoomLevel": "number - Zoom level (1-22, default: 10)",
+    "tileSetId": "string - Map style (default: microsoft.base.road)",
+    "tileSize": "number - 256 or 512 pixels (default: 256)"
+  }
+}
+```
+
+#### Get Static Map Image
+```json
+{
+  "name": "get_static_map_image",
+  "description": "Generate static map image with optional markers and paths",
+  "parameters": {
+    "boundingBox": "object - {west, south, east, north} coordinates",
+    "zoomLevel": "number - Zoom level (1-20, default: 10)",
+    "width": "number - Image width in pixels (1-8192, default: 512)",
+    "height": "number - Image height in pixels (1-8192, default: 512)",
+    "markers": "array - Optional markers with lat/lng/label/color",
+    "paths": "array - Optional paths with coordinates and styling"
+  }
+}
+```
+
+#### Get Tile Coordinates
+```json
+{
+  "name": "get_tile_coordinates",
+  "description": "Calculate tile X,Y coordinates for geographic position",
+  "parameters": {
+    "latitude": "number - Latitude coordinate",
+    "longitude": "number - Longitude coordinate",
+    "zoomLevel": "number - Zoom level (1-22, default: 10)",
+    "tileSize": "number - 256 or 512 pixels (default: 256)"
+  }
+}
+```
+
+### 🌐 Geolocation Tools
+
+#### Get Country Code by IP
+```json
+{
+  "name": "get_country_code_by_ip",
+  "description": "Get country code and location info for an IP address",
+  "parameters": {
+    "ipAddress": "string - IPv4 or IPv6 address to look up"
+  }
+}
+```
+
+#### Get Country Code Batch
+```json
+{
+  "name": "get_country_code_batch",
+  "description": "Get country codes for multiple IP addresses",
+  "parameters": {
+    "ipAddresses": "array - Array of IP addresses (max 100)"
+  }
+}
+```
+
+#### Validate IP Address
+```json
+{
+  "name": "validate_ip_address",
+  "description": "Validate IP address format and get technical details",
+  "parameters": {
+    "ipAddress": "string - IP address to validate"
+  }
+}
+```
 
 ## Project Structure
 
