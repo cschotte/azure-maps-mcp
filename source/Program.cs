@@ -10,10 +10,7 @@ builder.ConfigureFunctionsWebApplication();
 builder.EnableMcpToolMetadata(); // Enables tool registration metadata
 builder.ConfigureMcpTool("Azure Maps Tool"); // Register the tool name exposed to LLMs
 
-builder.Services
-    .AddHttpClient("AzureMaps") // Named http client for Azure Maps
-    .AddStandardResilienceHandler(); // Optional: adds resilience policies
-
+// Add Azure Maps service
 builder.Services.AddSingleton<IAzureMapsService, AzureMapsService>();
 
 builder.Build().Run();

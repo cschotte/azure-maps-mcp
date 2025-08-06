@@ -6,7 +6,7 @@
 			"command": "dotnet",
 			"args": [
 				"clean",
-				"${workspaceFolder}/azure-maps-mcp.csproj",
+				"${workspaceFolder}/source/azure-maps-mcp.csproj",
 				"/property:GenerateFullPaths=true",
 				"/consoleloggerparameters:NoSummary"
 			],
@@ -18,7 +18,7 @@
 			"command": "dotnet",
 			"args": [
 				"build",
-				"${workspaceFolder}/azure-maps-mcpcsproj",
+				"${workspaceFolder}/source/azure-maps-mcp.csproj",
 				"/property:GenerateFullPaths=true",
 				"/consoleloggerparameters:NoSummary"
 			],
@@ -35,7 +35,7 @@
 			"command": "dotnet",
 			"args": [
 				"clean",
-				"${workspaceFolder}/azure-maps-mcp.csproj",
+				"${workspaceFolder}/source/azure-maps-mcp.csproj",
 				"--configuration",
 				"Release",
 				"/property:GenerateFullPaths=true",
@@ -49,7 +49,7 @@
 			"command": "dotnet",
 			"args": [
 				"publish",
-				"${workspaceFolder}/azure-maps-mcp.csproj",
+				"${workspaceFolder}/source/azure-maps-mcp.csproj",
 				"--configuration",
 				"Release",
 				"/property:GenerateFullPaths=true",
@@ -60,10 +60,13 @@
 			"problemMatcher": "$msCompile"
 		},
 		{
+			"label": "func: host start",
 			"type": "func",
-			"dependsOn": "build (functions)",
+			"dependsOn": [
+				"build (functions)"
+			],
 			"options": {
-				"cwd": "${workspaceFolder}/bin/Debug/net9.0"
+				"cwd": "${workspaceFolder}/source/bin/Debug/net9.0"
 			},
 			"command": "host start",
 			"isBackground": true,

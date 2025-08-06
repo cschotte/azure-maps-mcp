@@ -9,7 +9,7 @@
         },
         "local-mcp-function": {
             "type": "sse",
-            "url": "http://localhost:7174/runtime/webhooks/mcp/sse"
+            "url": "http://localhost:7071/runtime/webhooks/mcp/sse"
         }
 	}
 }
