@@ -1,2 +1,1 @@
-# azure-maps-mcp
-Azure Maps remote MCP server
+# Azure Maps remote MCP server
