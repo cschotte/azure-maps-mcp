@@ -2,6 +2,10 @@
 
 A Model Context Protocol (MCP) server implementation that provides **Azure Maps** functionality as tools for Large Language Models (LLMs). This server exposes the full range of Azure Maps services including search, routing, rendering, and geolocation capabilities.
 
+> [!IMPORTANT]
+> The **Azure Maps MCP Server** is currently in preview. You can expect changes prior to the MCP server becoming generally available.
+> You should avoid using this MCP server preview in production apps.
+
 ## Overview
 
 This project implements an MCP server using Azure Functions that integrates with Azure Maps services and comprehensive country data. It allows LLMs to perform a wide range of geographic operations including:
@@ -383,20 +387,38 @@ azure-maps-mcp/
 ### Logs
 The application uses structured logging. Check the console output for detailed error messages and operational information.
 
+## Microsoft Open Source
+
+This project has adopted the [Microsoft Open Source Code of Conduct](https://opensource.microsoft.com/codeofconduct/).
+For more information see the [Code of Conduct FAQ](https://opensource.microsoft.com/codeofconduct/faq/) or
+contact [opencode@microsoft.com](mailto:opencode@microsoft.com) with any additional questions or comments.
+
+## Support
+
+This project is supported by Microsoft. For support and questions:
+
+- Create an issue in this repository for bugs and feature requests
+- For general questions about Azure Maps, visit [Azure Maps Documentation](https://docs.microsoft.com/azure/azure-maps/)
+- For commercial support, contact [Azure Support](https://azure.microsoft.com/support/)
+
 ## Contributing
 
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Add tests if applicable
-5. Submit a pull request
+This project welcomes contributions and suggestions. Most contributions require you to agree to a
+Contributor License Agreement (CLA) declaring that you have the right to, and actually do, grant us
+the rights to use your contribution. For details, visit https://cla.opensource.microsoft.com.
 
-## License
+When you submit a pull request, a CLA bot will automatically determine whether you need to provide
+a CLA and decorate the PR appropriately (e.g., status check, comment). Simply follow the instructions
+provided by the bot. You will only need to do this once across all repos using our CLA.
 
-This project is licensed under the terms specified in the LICENSE file.
+This project has adopted the [Microsoft Open Source Code of Conduct](https://opensource.microsoft.com/codeofconduct/).
+For more information see the [Code of Conduct FAQ](https://opensource.microsoft.com/codeofconduct/faq/) or
+contact [opencode@microsoft.com](mailto:opencode@microsoft.com) with any additional questions or comments.
 
-## Related Links
+## Trademarks
 
-- [Azure Maps Documentation](https://docs.microsoft.com/en-us/azure/azure-maps/)
-- [Model Context Protocol Specification](https://modelcontextprotocol.io/)
-- [Azure Functions Documentation](https://docs.microsoft.com/en-us/azure/azure-functions/)
+This project may contain trademarks or logos for projects, products, or services. Authorized use of Microsoft 
+trademarks or logos is subject to and must follow 
+[Microsoft's Trademark & Brand Guidelines](https://www.microsoft.com/en-us/legal/intellectualproperty/trademarks/usage/general).
+Use of Microsoft trademarks or logos in modified versions of this project must not cause confusion or imply Microsoft sponsorship.
+Any use of third-party trademarks or logos are subject to those third-party's policies.

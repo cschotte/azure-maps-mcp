@@ -8,7 +8,32 @@
     <RootNamespace>Azure.Maps.Mcp</RootNamespace>
     <DockerFastModeProjectMountDirectory>/home/site/wwwroot</DockerFastModeProjectMountDirectory>
     <DockerDefaultTargetOS>Linux</DockerDefaultTargetOS>
+    
+    <!-- Package Metadata -->
+    <PackageId>Azure.Maps.Mcp</PackageId>
+    <Title>Azure Maps MCP Server</Title>
+    <Description>A Model Context Protocol (MCP) server implementation that provides Azure Maps functionality as tools for Large Language Models (LLMs).</Description>
+    <Company>Microsoft Corporation</Company>
+    <Product>Azure Maps</Product>
+    <Copyright>© Microsoft Corporation. All rights reserved.</Copyright>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageProjectUrl>https://github.com/Azure/azure-maps-mcp</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/Azure/azure-maps-mcp</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageTags>azure;maps;mcp;ai;llm;geography;geocoding;routing</PackageTags>
+    <PackageReleaseNotes>See https://github.com/Azure/azure-maps-mcp/releases for release notes.</PackageReleaseNotes>
+    
+    <!-- Version Information -->
+    <VersionPrefix>1.0.0</VersionPrefix>
+    <VersionSuffix>preview</VersionSuffix>
+    
+    <!-- Code Analysis -->
+    <EnableNETAnalyzers>true</EnableNETAnalyzers>
+    <AnalysisLevel>latest</AnalysisLevel>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <WarningsNotAsErrors>NU1701</WarningsNotAsErrors>
   </PropertyGroup>
+  
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
     <PackageReference Include="Azure.Maps.Geolocation" Version="1.0.0-beta.3" />
@@ -21,6 +46,16 @@
     <PackageReference Include="Microsoft.Azure.Functions.Worker.Extensions.Mcp" Version="1.0.0-preview.6" />
     <PackageReference Include="Microsoft.Azure.Functions.Worker.Sdk" Version="2.0.5" />
     <PackageReference Include="Azure.Core" Version="1.45.0" />
-    <PackageReference Include="Microsoft.Extensions.DependencyModel" Version="8.0.0" />
+    <PackageReference Include="Microsoft.Extensions.DependencyModel" Version="9.0.0" />
+    
+    <!-- Code Analysis Packages -->
+    <PackageReference Include="Microsoft.CodeAnalysis.Analyzers" Version="3.3.4">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers</IncludeAssets>
+    </PackageReference>
+    <PackageReference Include="Microsoft.CodeAnalysis.NetAnalyzers" Version="9.0.0">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers</IncludeAssets>
+    </PackageReference>
   </ItemGroup>
 </Project>
