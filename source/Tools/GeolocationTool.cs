@@ -26,7 +26,7 @@ public class GeolocationTool(IAzureMapsService azureMapsService, ILogger<Geoloca
     public async Task<string> GetCountryCodeByIP(
         [McpToolTrigger(
             "get_country_code_by_ip",
-            "Get country code and location information for a given IP address. Supports both IPv4 and IPv6 addresses."
+            "Get country code and location information like ISO code, country name, and continent for a given IP address. Supports both IPv4 and IPv6 addresses."
         )] ToolInvocationContext context,
         [McpToolProperty(
             "ipAddress",
@@ -124,6 +124,8 @@ public class GeolocationTool(IAzureMapsService azureMapsService, ILogger<Geoloca
             var results = new List<object>();
             var successCount = 0;
             var errorCount = 0;
+            
+            var helper = new CountryHelper();
 
             foreach (var ip in ipList)
             {
@@ -154,16 +156,12 @@ public class GeolocationTool(IAzureMapsService azureMapsService, ILogger<Geoloca
                     }
 
                     var response = await _geolocationClient.GetCountryCodeAsync(parsedIP);
-                    
+
                     if (response.Value != null)
                     {
-                        results.Add(new
-                        {
-                            IPAddress = ip,
-                            CountryCode = response.Value.IsoCode,
-                            IPAddressType = parsedIP.AddressFamily.ToString(),
-                            Error = (string?)null
-                        });
+                        Country country = helper.GetCountryByCode(response.Value.IsoCode);
+
+                        results.Add(country);
                         successCount++;
                     }
                     else
@@ -196,8 +194,7 @@ public class GeolocationTool(IAzureMapsService azureMapsService, ILogger<Geoloca
                 {
                     TotalRequests = ipList.Count,
                     SuccessfulRequests = successCount,
-                    FailedRequests = errorCount,
-                    ProcessedAt = DateTimeOffset.UtcNow
+                    FailedRequests = errorCount
                 },
                 Results = results
             };
