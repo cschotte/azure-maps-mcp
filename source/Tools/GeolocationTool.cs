@@ -96,12 +96,12 @@ public class GeolocationTool(IAzureMapsService azureMapsService, ILogger<Geoloca
     public async Task<string> GetCountryCodeBatch(
         [McpToolTrigger(
             "get_country_code_batch",
-            "Get country codes for multiple IP addresses in a single request. Useful for batch processing of IP addresses."
+            "Get country codes and location information for multiple IP addresses in a single request. Efficiently processes up to 100 IP addresses at once. Returns detailed country information including ISO codes, names, and continents for each IP address. Useful for batch processing of IP geolocation data."
         )] ToolInvocationContext context,
         [McpToolProperty(
             "ipAddresses",
             "string",
-            "JSON array of IP addresses to look up. Format: '[\"8.8.8.8\", \"1.1.1.1\", \"2001:4898:80e8:b::189\"]'. Maximum 100 IP addresses per request."
+            "JSON array of IP addresses to look up as strings. Supports both IPv4 and IPv6 addresses. Format: '[\"8.8.8.8\", \"1.1.1.1\", \"2001:4898:80e8:b::189\"]'. Maximum 100 IP addresses per request. Each IP will be processed individually and results will include success/failure status."
         )] string ipAddresses
     )
     {
@@ -223,12 +223,12 @@ public class GeolocationTool(IAzureMapsService azureMapsService, ILogger<Geoloca
     public Task<string> ValidateIPAddress(
         [McpToolTrigger(
             "validate_ip_address",
-            "Validate IP address format and get basic information about the IP address type, family, and format."
+            "Validate IP address format and get comprehensive technical information about the IP address. Returns validation status, address family (IPv4/IPv6), scope information (public/private/loopback), and technical details. Useful for IP address validation and analysis before performing geolocation lookups."
         )] ToolInvocationContext context,
         [McpToolProperty(
             "ipAddress",
             "string",
-            "The IP address to validate (IPv4 or IPv6). Examples: '8.8.8.8', '2001:4898:80e8:b::189'"
+            "The IP address to validate and analyze. Supports both IPv4 and IPv6 formats. Examples: '8.8.8.8' (IPv4), '2001:4898:80e8:b::189' (IPv6). Returns detailed technical information including address family, scope, and whether it's a private or public address."
         )] string ipAddress
     )
     {

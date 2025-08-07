@@ -26,7 +26,7 @@ public class SearchTool(IAzureMapsService azureMapsService, ILogger<SearchTool> 
     public async Task<string> Geocoding(
         [McpToolTrigger(
             "geocoding",
-            "Convert street addresses or place names to longitude and latitude coordinates. Returns detailed address properties including street, postal code, municipality, and country/region information."
+            "Convert street addresses, landmarks, or place names into precise geographic coordinates (latitude and longitude). This forward geocoding service handles various address formats from complete street addresses to partial addresses or landmark names. Returns detailed address components including street details, postal codes, administrative areas, and confidence scores. Essential for mapping applications, location-based services, and spatial analysis."
         )] ToolInvocationContext context,
         [McpToolProperty(
             "address",
@@ -35,8 +35,8 @@ public class SearchTool(IAzureMapsService azureMapsService, ILogger<SearchTool> 
         )] string address,
         [McpToolProperty(
             "maxResults",
-            "number",
-            "Maximum number of results to return (1-20, default: 5)"
+            "string",
+            "Maximum number of results to return as a string number (e.g., '5'). Must be between 1 and 20. Default is '5' if not specified."
         )] int maxResults = 5
     )
     {
@@ -105,17 +105,17 @@ public class SearchTool(IAzureMapsService azureMapsService, ILogger<SearchTool> 
     public async Task<string> ReverseGeocoding(
         [McpToolTrigger(
             "reverse_geocoding",
-            "Convert longitude and latitude coordinates to a street address and location details."
+            "Convert precise geographic coordinates (latitude and longitude) into human-readable street addresses and location details. This reverse geocoding service is essential for location-based applications that need to display meaningful address information from GPS coordinates or map click events. Returns formatted addresses with detailed components including street names, postal codes, and administrative boundaries."
         )] ToolInvocationContext context,
         [McpToolProperty(
             "latitude",
-            "number",
-            "Latitude coordinate (e.g., 47.6062)"
+            "string",
+            "Latitude coordinate as a decimal number (e.g., '47.6062'). Must be between -90 and 90 degrees."
         )] double latitude,
         [McpToolProperty(
             "longitude",
-            "number",
-            "Longitude coordinate (e.g., -122.3321)"
+            "string",
+            "Longitude coordinate as a decimal number (e.g., '-122.3321'). Must be between -180 and 180 degrees."
         )] double longitude
     )
     {
@@ -185,27 +185,27 @@ public class SearchTool(IAzureMapsService azureMapsService, ILogger<SearchTool> 
     public async Task<string> GetPolygon(
         [McpToolTrigger(
             "get_polygon",
-            "Get administrative boundary polygon (city, postal code, country subdivision, etc.) for a specific geographic location. Returns polygon coordinates that define the boundary."
+            "Retrieve administrative boundary polygons for geographic locations such as city limits, postal code areas, state/province boundaries, or country borders. This service returns precise polygon coordinates that define these administrative boundaries, enabling spatial analysis, territory mapping, and geofencing applications. Essential for analyzing geographic containment, service area definition, and administrative boundary visualization."
         )] ToolInvocationContext context,
         [McpToolProperty(
             "latitude",
-            "number",
-            "Latitude coordinate of the location to get boundary for (e.g., 47.61256)"
+            "string",
+            "Latitude coordinate of the location to get boundary polygon for as a decimal number (e.g., '47.61256'). Must be between -90 and 90 degrees."
         )] double latitude,
         [McpToolProperty(
             "longitude",
-            "number",
-            "Longitude coordinate of the location to get boundary for (e.g., -122.204141)"
+            "string",
+            "Longitude coordinate of the location to get boundary polygon for as a decimal number (e.g., '-122.204141'). Must be between -180 and 180 degrees."
         )] double longitude,
         [McpToolProperty(
             "resultType",
             "string",
-            "Type of boundary to retrieve: 'locality' (city), 'postalCode' (postal code), 'adminDistrict' (state/province), 'countryRegion' (country)"
+            "Type of administrative boundary to retrieve: 'locality' (city/town boundaries), 'postalCode' (postal/ZIP code boundaries), 'adminDistrict' (state/province boundaries), 'countryRegion' (country boundaries). Default is 'locality'."
         )] string resultType = "locality",
         [McpToolProperty(
             "resolution",
             "string",
-            "Level of detail for polygon coordinates: 'small' (fewer points), 'medium', 'large' (more detailed)"
+            "Level of detail for polygon coordinates: 'small' (fewer coordinate points, faster), 'medium' (balanced detail), 'large' (highly detailed boundaries, more points). Default is 'small'."
         )] string resolution = "small"
     )
     {

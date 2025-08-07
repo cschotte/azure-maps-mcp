@@ -19,95 +19,38 @@ public class RenderTool(IAzureMapsService azureMapsService, ILogger<RenderTool> 
     private readonly MapsRenderingClient _renderingClient = azureMapsService.RenderingClient;
 
     /// <summary>
-    /// Get map tile metadata for a specific tile set
-    /// </summary>
-    [Function(nameof(GetMapTileSetMetadata))]
-    public async Task<string> GetMapTileSetMetadata(
-        [McpToolTrigger(
-            "get_map_tileset_metadata",
-            "Get metadata information for a specific map tile set, including tile scheme, endpoints, and supported zoom levels."
-        )] ToolInvocationContext context,
-        [McpToolProperty(
-            "tileSetId",
-            "string",
-            "The tile set ID to get metadata for. Options: 'microsoft.base.road', 'microsoft.base.hybrid', 'microsoft.imagery', 'microsoft.weather.radar.main', 'microsoft.weather.infrared.main'"
-        )] string tileSetId = "microsoft.base.road"
-    )
-    {
-        try
-        {
-            logger.LogInformation("Getting tile set metadata for: {TileSetId}", tileSetId);
-
-            // Parse tile set ID
-            if (!Enum.TryParse<MapTileSetId>(tileSetId.Replace(".", ""), true, out var parsedTileSetId))
-            {
-                return JsonSerializer.Serialize(new { error = $"Invalid tile set ID '{tileSetId}'. Valid options: microsoft.base.road, microsoft.base.hybrid, microsoft.imagery, microsoft.weather.radar.main, microsoft.weather.infrared.main" });
-            }
-
-            var response = await _renderingClient.GetMapTileSetAsync(parsedTileSetId);
-
-            if (response.Value != null)
-            {
-                var tileSet = response.Value;
-                var result = new
-                {
-                    TileSetName = tileSet.TileSetName,
-                    TileScheme = tileSet.TileScheme.ToString(),
-                    TileEndpoints = tileSet.TileEndpoints?.ToList()
-                };
-
-                logger.LogInformation("Successfully retrieved tile set metadata for {TileSetName}", result.TileSetName);
-                return JsonSerializer.Serialize(new { success = true, result }, new JsonSerializerOptions { WriteIndented = true });
-            }
-
-            logger.LogWarning("No tile set metadata found for: {TileSetId}", tileSetId);
-            return JsonSerializer.Serialize(new { success = false, message = "No tile set metadata found" });
-        }
-        catch (RequestFailedException ex)
-        {
-            logger.LogError(ex, "Azure Maps API error during tile set metadata retrieval: {Message}", ex.Message);
-            return JsonSerializer.Serialize(new { error = $"API Error: {ex.Message}" });
-        }
-        catch (Exception ex)
-        {
-            logger.LogError(ex, "Unexpected error during tile set metadata retrieval");
-            return JsonSerializer.Serialize(new { error = "An unexpected error occurred" });
-        }
-    }
-
-    /// <summary>
     /// Get a map tile image for specific coordinates and zoom level
     /// </summary>
     [Function(nameof(GetMapTile))]
     public async Task<string> GetMapTile(
         [McpToolTrigger(
             "get_map_tile",
-            "Get a map tile image for specific coordinates and zoom level. Returns the tile as a base64-encoded PNG image."
+            "Retrieve a map tile image for specific geographic coordinates and zoom level. Map tiles are the building blocks of web maps, providing visual representation of geographic areas. This service returns high-quality map tiles in PNG format with various styles (road maps, satellite imagery, hybrid views). Essential for building custom mapping applications, creating map overlays, and displaying geographic context."
         )] ToolInvocationContext context,
         [McpToolProperty(
             "latitude",
-            "number",
-            "Latitude coordinate for the tile center (e.g., 47.6062)"
+            "string",
+            "Latitude coordinate for the tile center as a decimal number (e.g., '47.6062'). Must be between -90 and 90 degrees."
         )] double latitude,
         [McpToolProperty(
             "longitude",
-            "number",
-            "Longitude coordinate for the tile center (e.g., -122.3321)"
+            "string",
+            "Longitude coordinate for the tile center as a decimal number (e.g., '-122.3321'). Must be between -180 and 180 degrees."
         )] double longitude,
         [McpToolProperty(
             "zoomLevel",
-            "number",
-            "Zoom level for the tile (1-22, default: 10)"
+            "string",
+            "Zoom level for the tile as a string number (e.g., '10'). Must be between 1 and 22. Higher numbers show more detail but smaller area."
         )] int zoomLevel = 10,
         [McpToolProperty(
             "tileSetId",
             "string",
-            "The tile set style. Options: 'microsoft.base.road' (default), 'microsoft.base.hybrid', 'microsoft.imagery'"
+            "The tile set style to use: 'microsoft.base.road' (street map with roads, default), 'microsoft.base.hybrid' (satellite imagery with road labels), 'microsoft.imagery' (pure satellite imagery)."
         )] string tileSetId = "microsoft.base.road",
         [McpToolProperty(
             "tileSize",
-            "number",
-            "Size of the tile in pixels (256 or 512, default: 256)"
+            "string",
+            "Size of the tile in pixels as a string number (e.g., '256' or '512'). Only 256 and 512 are supported. Default is '256'."
         )] int tileSize = 256
     )
     {
@@ -135,10 +78,18 @@ public class RenderTool(IAzureMapsService azureMapsService, ILogger<RenderTool> 
 
             logger.LogInformation("Getting map tile for coordinates: {Latitude}, {Longitude} at zoom {ZoomLevel}", latitude, longitude, zoomLevel);
 
-            // Parse tile set ID
-            if (!Enum.TryParse<MapTileSetId>(tileSetId.Replace(".", ""), true, out var parsedTileSetId))
+            // Validate tile set ID options
+            var validTileSetIds = new Dictionary<string, MapTileSetId>(StringComparer.OrdinalIgnoreCase)
             {
-                return JsonSerializer.Serialize(new { error = $"Invalid tile set ID '{tileSetId}'. Valid options: microsoft.base.road, microsoft.base.hybrid, microsoft.imagery" });
+                { "microsoft.base.road", MapTileSetId.MicrosoftBaseRoad },
+                { "microsoft.base.hybrid", MapTileSetId.MicrosoftBaseHybrid },
+                { "microsoft.imagery", MapTileSetId.MicrosoftImagery }
+            };
+
+            if (!validTileSetIds.TryGetValue(tileSetId, out var parsedTileSetId))
+            {
+                var validOptions = string.Join(", ", validTileSetIds.Keys);
+                return JsonSerializer.Serialize(new { error = $"Invalid tile set ID '{tileSetId}'. Valid options: {validOptions}" });
             }
 
             // Calculate tile index from coordinates
@@ -200,48 +151,58 @@ public class RenderTool(IAzureMapsService azureMapsService, ILogger<RenderTool> 
     public async Task<string> GetStaticMapImage(
         [McpToolTrigger(
             "get_static_map_image",
-            "Generate a static map image for a specified area with optional markers and paths. Returns the image as a base64-encoded PNG."
+            "Generate a custom static map image for a specified geographic area with optional markers and path overlays. This service creates publication-ready map images perfect for reports, documentation, presentations, or embedding in applications. Supports various map styles, custom markers for points of interest, and path drawing for routes or boundaries. Returns high-quality PNG images that can be directly used or embedded."
         )] ToolInvocationContext context,
         [McpToolProperty(
             "boundingBox",
-            "object",
-            "Bounding box defining the map area. Format: {\"west\": -122.4, \"south\": 47.5, \"east\": -122.2, \"north\": 47.7}"
-        )] string boundingBox,
+            "string",
+            "JSON object defining the rectangular map area to display. Must contain west, south, east, north coordinates. Format: '{\"west\": -122.4, \"south\": 47.5, \"east\": -122.2, \"north\": 47.7}'. Coordinates define the viewing rectangle."
+        )] string boundingBox = "{\"west\": -122.4, \"south\": 47.5, \"east\": -122.2, \"north\": 47.7}",
         [McpToolProperty(
             "zoomLevel",
-            "number",
-            "Zoom level for the map (1-20, default: 10)"
+            "string",
+            "Zoom level for the map as a string number (e.g., '10'). Must be between 1 and 20. Higher numbers show more detail."
         )] int zoomLevel = 10,
         [McpToolProperty(
             "width",
-            "number",
-            "Width of the image in pixels (1-8192, default: 512)"
+            "string",
+            "Width of the image in pixels as a string number (e.g., '512'). Must be between 1 and 8192."
         )] int width = 512,
         [McpToolProperty(
             "height",
-            "number",
-            "Height of the image in pixels (1-8192, default: 512)"
+            "string",
+            "Height of the image in pixels as a string number (e.g., '512'). Must be between 1 and 8192."
         )] int height = 512,
         [McpToolProperty(
             "mapStyle",
             "string",
-            "Map style. Options: 'road' (default), 'satellite', 'hybrid'"
+            "Visual style of the map: 'road' (street map with roads, default), 'satellite' (aerial/satellite imagery), 'hybrid' (satellite with road overlay)."
         )] string mapStyle = "road",
         [McpToolProperty(
             "markers",
-            "array",
-            "Optional markers to add to the map. Format: [{\"latitude\": 47.6, \"longitude\": -122.3, \"label\": \"Marker 1\", \"color\": \"red\"}]"
+            "string",
+            "Optional JSON array of marker objects to place on the map. Each marker should have latitude, longitude, and optional label and color. Format: '[{\"latitude\": 47.6, \"longitude\": -122.3, \"label\": \"Marker 1\", \"color\": \"red\"}]'. Leave empty or null for no markers."
         )] string? markers = null,
         [McpToolProperty(
             "paths",
-            "array",
-            "Optional paths to draw on the map. Format: [{\"coordinates\": [{\"latitude\": 47.6, \"longitude\": -122.3}, {\"latitude\": 47.7, \"longitude\": -122.2}], \"color\": \"blue\", \"width\": 3}]"
+            "string",
+            "Optional JSON array of path objects to draw lines/routes on the map. Each path should have coordinates array and optional color and width. Format: '[{\"coordinates\": [{\"latitude\": 47.6, \"longitude\": -122.3}, {\"latitude\": 47.7, \"longitude\": -122.2}], \"color\": \"blue\", \"width\": 3}]'. Leave empty or null for no paths."
         )] string? paths = null
     )
     {
         try
         {
-            var bbox = JsonSerializer.Deserialize<Dictionary<string, double>>(boundingBox);
+            Dictionary<string, double>? bbox;
+            try
+            {
+                bbox = JsonSerializer.Deserialize<Dictionary<string, double>>(boundingBox);
+            }
+            catch (JsonException ex)
+            {
+                logger.LogError(ex, "Failed to parse bounding box JSON: {BoundingBox}", boundingBox);
+                return JsonSerializer.Serialize(new { error = $"Invalid bounding box JSON format. Expected: {{\"west\": -122.4, \"south\": 47.5, \"east\": -122.2, \"north\": 47.7}}. Error: {ex.Message}" });
+            }
+            
             if (bbox == null || !bbox.ContainsKey("west") || !bbox.ContainsKey("south") || 
                 !bbox.ContainsKey("east") || !bbox.ContainsKey("north"))
             {
@@ -270,7 +231,7 @@ public class RenderTool(IAzureMapsService azureMapsService, ILogger<RenderTool> 
             {
                 try
                 {
-                    var markerList = JsonSerializer.Deserialize<List<Dictionary<string, object>>>(markers);
+                    var markerList = JsonSerializer.Deserialize<List<Dictionary<string, JsonElement>>>(markers);
                     if (markerList != null)
                     {
                         var pushpinPositions = new List<PushpinPosition>();
@@ -278,9 +239,9 @@ public class RenderTool(IAzureMapsService azureMapsService, ILogger<RenderTool> 
                         {
                             if (marker.ContainsKey("latitude") && marker.ContainsKey("longitude"))
                             {
-                                var lat = Convert.ToDouble(marker["latitude"]);
-                                var lon = Convert.ToDouble(marker["longitude"]);
-                                var label = marker.ContainsKey("label") ? marker["label"].ToString() : "";
+                                var lat = marker["latitude"].GetDouble();
+                                var lon = marker["longitude"].GetDouble();
+                                var label = marker.ContainsKey("label") ? marker["label"].GetString() ?? "" : "";
                                 pushpinPositions.Add(new PushpinPosition(lon, lat, label));
                             }
                         }
@@ -307,7 +268,7 @@ public class RenderTool(IAzureMapsService azureMapsService, ILogger<RenderTool> 
             {
                 try
                 {
-                    var pathList = JsonSerializer.Deserialize<List<Dictionary<string, object>>>(paths);
+                    var pathList = JsonSerializer.Deserialize<List<Dictionary<string, JsonElement>>>(paths);
                     if (pathList != null)
                     {
                         foreach (var path in pathList)
@@ -321,7 +282,7 @@ public class RenderTool(IAzureMapsService azureMapsService, ILogger<RenderTool> 
                                     var geoPositions = coords.Select(c => new GeoPosition(c["longitude"], c["latitude"])).ToList();
                                     var pathStyle = new ImagePathStyle(geoPositions)
                                     {
-                                        LineWidthInPixels = path.ContainsKey("width") ? Convert.ToInt32(path["width"]) : 3
+                                        LineWidthInPixels = path.ContainsKey("width") ? path["width"].GetInt32() : 3
                                     };
                                     pathStyles.Add(pathStyle);
                                 }
@@ -398,106 +359,6 @@ public class RenderTool(IAzureMapsService azureMapsService, ILogger<RenderTool> 
         {
             logger.LogError(ex, "Unexpected error during static image generation");
             return JsonSerializer.Serialize(new { error = "An unexpected error occurred" });
-        }
-    }
-
-    /// <summary>
-    /// Calculate tile coordinates for a given position and zoom level
-    /// </summary>
-    [Function(nameof(GetTileCoordinates))]
-    public Task<string> GetTileCoordinates(
-        [McpToolTrigger(
-            "get_tile_coordinates",
-            "Calculate tile X, Y coordinates and other tile information for a given geographic position and zoom level."
-        )] ToolInvocationContext context,
-        [McpToolProperty(
-            "latitude",
-            "number",
-            "Latitude coordinate (e.g., 47.6062)"
-        )] double latitude,
-        [McpToolProperty(
-            "longitude",
-            "number",
-            "Longitude coordinate (e.g., -122.3321)"
-        )] double longitude,
-        [McpToolProperty(
-            "zoomLevel",
-            "number",
-            "Zoom level (1-22, default: 10)"
-        )] int zoomLevel = 10,
-        [McpToolProperty(
-            "tileSize",
-            "number",
-            "Size of the tile in pixels (256 or 512, default: 256)"
-        )] int tileSize = 256
-    )
-    {
-        try
-        {
-            if (latitude < -90 || latitude > 90)
-            {
-                return Task.FromResult(JsonSerializer.Serialize(new { error = "Latitude must be between -90 and 90 degrees" }));
-            }
-
-            if (longitude < -180 || longitude > 180)
-            {
-                return Task.FromResult(JsonSerializer.Serialize(new { error = "Longitude must be between -180 and 180 degrees" }));
-            }
-
-            if (zoomLevel < 1 || zoomLevel > 22)
-            {
-                return Task.FromResult(JsonSerializer.Serialize(new { error = "Zoom level must be between 1 and 22" }));
-            }
-
-            if (tileSize != 256 && tileSize != 512)
-            {
-                return Task.FromResult(JsonSerializer.Serialize(new { error = "Tile size must be either 256 or 512 pixels" }));
-            }
-
-            logger.LogInformation("Calculating tile coordinates for: {Latitude}, {Longitude} at zoom {ZoomLevel}", latitude, longitude, zoomLevel);
-
-            // Calculate tile index from coordinates
-            var tileIndex = MapsRenderingClient.PositionToTileXY(new GeoPosition(longitude, latitude), zoomLevel, tileSize);
-
-            // Calculate some additional useful information
-            var totalTilesAtZoom = Math.Pow(2, zoomLevel);
-            var tileWorldSize = tileSize * totalTilesAtZoom;
-
-            var result = new
-            {
-                InputCoordinates = new
-                {
-                    Latitude = latitude,
-                    Longitude = longitude
-                },
-                TileCoordinates = new
-                {
-                    X = tileIndex.X,
-                    Y = tileIndex.Y,
-                    ZoomLevel = zoomLevel
-                },
-                TileInfo = new
-                {
-                    TileSize = tileSize,
-                    TotalTilesAtZoom = (int)totalTilesAtZoom,
-                    TileWorldSize = (long)tileWorldSize
-                },
-                TileUrl = new
-                {
-                    TemplateFormat = "https://atlas.microsoft.com/map/tile?subscription-key={subscription-key}&api-version=2022-08-01&tilesetId={tilesetId}&zoom={z}&x={x}&y={y}",
-                    ExampleUrl = $"https://atlas.microsoft.com/map/tile?subscription-key={{subscription-key}}&api-version=2022-08-01&tilesetId=microsoft.base.road&zoom={zoomLevel}&x={tileIndex.X}&y={tileIndex.Y}"
-                }
-            };
-
-            logger.LogInformation("Successfully calculated tile coordinates: X={X}, Y={Y}, Zoom={Zoom}", 
-                tileIndex.X, tileIndex.Y, zoomLevel);
-
-            return Task.FromResult(JsonSerializer.Serialize(new { success = true, result }, new JsonSerializerOptions { WriteIndented = true }));
-        }
-        catch (Exception ex)
-        {
-            logger.LogError(ex, "Unexpected error during tile coordinate calculation");
-            return Task.FromResult(JsonSerializer.Serialize(new { error = "An unexpected error occurred" }));
         }
     }
 }

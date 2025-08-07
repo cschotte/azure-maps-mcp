@@ -25,12 +25,12 @@ public class RoutingTool(IAzureMapsService azureMapsService, ILogger<RoutingTool
     public async Task<string> GetRouteDirections(
         [McpToolTrigger(
             "get_route_directions",
-            "Calculate route directions between two or more coordinates. Returns detailed route information including distance, travel time, and turn-by-turn instructions."
+            "Calculate detailed driving/walking/cycling directions between two or more geographic coordinates. Returns comprehensive route information including total distance, estimated travel time, turn-by-turn navigation instructions, and route geometry. Supports multiple travel modes (car, bicycle, pedestrian, etc.) and route optimization preferences (fastest vs shortest). Can handle waypoints for multi-stop routes."
         )] ToolInvocationContext context,
         [McpToolProperty(
             "coordinates",
             "string",
-            "Array of coordinate objects with latitude and longitude. Must include at least origin and destination. Format: [{\"latitude\": 47.6062, \"longitude\": -122.3321}, {\"latitude\": 47.6205, \"longitude\": -122.3493}]"
+            "JSON array of coordinate objects with latitude and longitude properties. Must include at least 2 points (origin and destination). Additional points will be treated as waypoints. Format: '[{\"latitude\": 47.6062, \"longitude\": -122.3321}, {\"latitude\": 47.6205, \"longitude\": -122.3493}]'. First coordinate is origin, last is destination."
         )] string coordinates,
         [McpToolProperty(
             "travelMode",
@@ -218,17 +218,17 @@ public class RoutingTool(IAzureMapsService azureMapsService, ILogger<RoutingTool
     public async Task<string> GetRouteMatrix(
         [McpToolTrigger(
             "get_route_matrix",
-            "Calculate travel times and distances between multiple origins and destinations. Useful for optimization scenarios like delivery routing or finding the closest locations."
+            "Calculate travel times and distances between multiple origin and destination points in a matrix format. This is essential for optimization scenarios like delivery route planning, finding closest locations, or logistics optimization. Returns a comprehensive matrix showing travel time and distance from each origin to each destination, enabling efficient route planning and location analysis."
         )] ToolInvocationContext context,
         [McpToolProperty(
             "origins",
-            "array",
-            "Array of origin coordinate objects. Format: [{\"latitude\": 47.6062, \"longitude\": -122.3321}, {\"latitude\": 47.6205, \"longitude\": -122.3493}]"
+            "string",
+            "JSON array of origin coordinate objects with latitude and longitude properties. Format: '[{\"latitude\": 47.6062, \"longitude\": -122.3321}, {\"latitude\": 47.6205, \"longitude\": -122.3493}]'. Each coordinate represents a starting point for route calculations."
         )] string origins,
         [McpToolProperty(
             "destinations",
-            "array",
-            "Array of destination coordinate objects. Format: [{\"latitude\": 47.6062, \"longitude\": -122.3321}, {\"latitude\": 47.6205, \"longitude\": -122.3493}]"
+            "string",
+            "JSON array of destination coordinate objects with latitude and longitude properties. Format: '[{\"latitude\": 47.6062, \"longitude\": -122.3321}, {\"latitude\": 47.6205, \"longitude\": -122.3493}]'. Each coordinate represents an ending point for route calculations."
         )] string destinations,
         [McpToolProperty(
             "travelMode",
@@ -438,27 +438,27 @@ public class RoutingTool(IAzureMapsService azureMapsService, ILogger<RoutingTool
     public async Task<string> GetRouteRange(
         [McpToolTrigger(
             "get_route_range",
-            "Calculate the area reachable within a given time or distance from a starting point. Returns a polygon representing the reachable area (isochrone)."
+            "Calculate the geographic area reachable within a specified time limit or distance from a starting point. This creates an 'isochrone' or 'isodistance' polygon showing all locations accessible within the given constraints. Useful for service area analysis, delivery zone planning, emergency response coverage, and accessibility studies. Returns polygon coordinates that define the reachable boundary."
         )] ToolInvocationContext context,
         [McpToolProperty(
             "latitude",
-            "number",
-            "Starting point latitude coordinate (e.g., 47.6062)"
+            "string",
+            "Starting point latitude coordinate as a decimal number (e.g., '47.6062'). Must be between -90 and 90 degrees."
         )] double latitude,
         [McpToolProperty(
             "longitude",
-            "number",
-            "Starting point longitude coordinate (e.g., -122.3321)"
+            "string",
+            "Starting point longitude coordinate as a decimal number (e.g., '-122.3321'). Must be between -180 and 180 degrees."
         )] double longitude,
         [McpToolProperty(
             "timeBudgetInSeconds",
-            "number",
-            "Time budget in seconds for reachability (e.g., 1800 for 30 minutes). Use either this or distanceBudgetInMeters, not both."
+            "string",
+            "Time budget in seconds for reachability calculation (e.g., '1800' for 30 minutes). Use either this OR distanceBudgetInMeters, not both. This defines how far you can travel within the given time."
         )] int? timeBudgetInSeconds = null,
         [McpToolProperty(
             "distanceBudgetInMeters",
-            "number",
-            "Distance budget in meters for reachability (e.g., 5000 for 5km). Use either this or timeBudgetInSeconds, not both."
+            "string",
+            "Distance budget in meters for reachability calculation (e.g., '5000' for 5km). Use either this OR timeBudgetInSeconds, not both. This defines the maximum distance you can travel."
         )] int? distanceBudgetInMeters = null,
         [McpToolProperty(
             "travelMode",
