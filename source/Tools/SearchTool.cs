@@ -36,7 +36,7 @@ public class SearchTool(IAzureMapsService azureMapsService, ILogger<SearchTool> 
         [McpToolProperty(
             "maxResults",
             "number",
-            "Maximum number of results to return (1-100, default: 5)"
+            "Maximum number of results to return (1-20, default: 5)"
         )] int maxResults = 5
     )
     {
@@ -48,7 +48,7 @@ public class SearchTool(IAzureMapsService azureMapsService, ILogger<SearchTool> 
                 return JsonSerializer.Serialize(new { error = "Address is required" });
             }
 
-            maxResults = Math.Max(1, Math.Min(100, maxResults));
+            maxResults = Math.Max(1, Math.Min(20, maxResults));
 
             logger.LogInformation("Geocoding address: {Address}", address);
 
@@ -75,8 +75,8 @@ public class SearchTool(IAzureMapsService azureMapsService, ILogger<SearchTool> 
                         CountryRegion = feature.Properties.Address?.CountryRegion,
                         Locality = feature.Properties.Address?.Locality
                     },
-                    Confidence = feature.Properties.Confidence,
-                    MatchCodes = feature.Properties.MatchCodes?.ToString()
+                    Confidence = feature.Properties.Confidence.ToString(),
+                    MatchCodes = feature.Properties.MatchCodes?.Select(mc => mc.ToString()).ToArray()
                 });
 
                 logger.LogInformation("Successfully geocoded address, found {Count} results", results.Count());
@@ -156,7 +156,7 @@ public class SearchTool(IAzureMapsService azureMapsService, ILogger<SearchTool> 
                         Latitude = latitude,
                         Longitude = longitude
                     },
-                    MatchCodes = feature.Properties.MatchCodes?.ToString()
+                    MatchCodes = feature.Properties.MatchCodes?.Select(mc => mc.ToString()).ToArray()
                 };
 
                 logger.LogInformation("Successfully reverse geocoded coordinates");
@@ -200,7 +200,7 @@ public class SearchTool(IAzureMapsService azureMapsService, ILogger<SearchTool> 
         [McpToolProperty(
             "resultType",
             "string",
-            "Type of boundary to retrieve: 'locality' (city), 'postalCode1' (postal code), 'adminDistrict1' (state/province), 'adminDistrict2' (county), 'countryRegion' (country)"
+            "Type of boundary to retrieve: 'locality' (city), 'postalCode' (postal code), 'adminDistrict' (state/province), 'countryRegion' (country)"
         )] string resultType = "locality",
         [McpToolProperty(
             "resolution",
@@ -221,14 +221,16 @@ public class SearchTool(IAzureMapsService azureMapsService, ILogger<SearchTool> 
                 return JsonSerializer.Serialize(new { error = "Longitude must be between -180 and 180 degrees" });
             }
 
-            // Validate and convert result type
-            if (!Enum.TryParse<BoundaryResultTypeEnum>(resultType, true, out var boundaryType))
+            // Validate result type options
+            var validResultTypes = new BoundaryResultTypeEnum[] { BoundaryResultTypeEnum.Locality, BoundaryResultTypeEnum.PostalCode, BoundaryResultTypeEnum.AdminDistrict, BoundaryResultTypeEnum.CountryRegion };
+            if (!validResultTypes.Contains(resultType.ToLower()))
             {
-                return JsonSerializer.Serialize(new { error = $"Invalid result type '{resultType}'. Valid options: locality, postalCode1, adminDistrict1, adminDistrict2, countryRegion" });
+                return JsonSerializer.Serialize(new { error = $"Invalid result type '{resultType}'. Valid options: locality, postalCode, adminDistrict, countryRegion" });
             }
 
-            // Validate and convert resolution
-            if (!Enum.TryParse<ResolutionEnum>(resolution, true, out var resolutionLevel))
+            // Validate resolution options
+            var validResolutions = new ResolutionEnum[] { ResolutionEnum.Small, ResolutionEnum.Medium, ResolutionEnum.Large };
+            if (!validResolutions.Contains(resolution.ToLower()))
             {
                 return JsonSerializer.Serialize(new { error = $"Invalid resolution '{resolution}'. Valid options: small, medium, large" });
             }
@@ -237,10 +239,39 @@ public class SearchTool(IAzureMapsService azureMapsService, ILogger<SearchTool> 
 
             var options = new GetPolygonOptions()
             {
-                Coordinates = new GeoPosition(longitude, latitude),
-                ResultType = boundaryType,
-                Resolution = resolutionLevel,
+                Coordinates = new GeoPosition(longitude, latitude)
             };
+
+            // Set ResultType based on string value (the SDK likely accepts string values)
+            switch (resultType.ToLower())
+            {
+                case "locality":
+                    options.ResultType = BoundaryResultTypeEnum.Locality;
+                    break;
+                case "postalcode":
+                    options.ResultType = BoundaryResultTypeEnum.PostalCode;
+                    break;
+                case "admindistrict":
+                    options.ResultType = BoundaryResultTypeEnum.AdminDistrict;
+                    break;
+                case "countryregion":
+                    options.ResultType = BoundaryResultTypeEnum.CountryRegion;
+                    break;
+            }
+
+            // Set Resolution based on string value
+            switch (resolution.ToLower())
+            {
+                case "small":
+                    options.Resolution = ResolutionEnum.Small;
+                    break;
+                case "medium":
+                    options.Resolution = ResolutionEnum.Medium;
+                    break;
+                case "large":
+                    options.Resolution = ResolutionEnum.Large;
+                    break;
+            }
 
             var response = await _searchClient.GetPolygonAsync(options);
 
