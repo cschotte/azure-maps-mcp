@@ -222,56 +222,42 @@ public class SearchTool(IAzureMapsService azureMapsService, ILogger<SearchTool> 
             }
 
             // Validate result type options
-            var validResultTypes = new BoundaryResultTypeEnum[] { BoundaryResultTypeEnum.Locality, BoundaryResultTypeEnum.PostalCode, BoundaryResultTypeEnum.AdminDistrict, BoundaryResultTypeEnum.CountryRegion };
-            if (!validResultTypes.Contains(resultType.ToLower()))
+            var validResultTypes = new Dictionary<string, BoundaryResultTypeEnum>(StringComparer.OrdinalIgnoreCase)
             {
-                return JsonSerializer.Serialize(new { error = $"Invalid result type '{resultType}'. Valid options: locality, postalCode, adminDistrict, countryRegion" });
+                { "locality", BoundaryResultTypeEnum.Locality },
+                { "postalcode", BoundaryResultTypeEnum.PostalCode },
+                { "admindistrict", BoundaryResultTypeEnum.AdminDistrict },
+                { "countryregion", BoundaryResultTypeEnum.CountryRegion }
+            };
+
+            if (!validResultTypes.TryGetValue(resultType, out var resultTypeEnum))
+            {
+                var validOptions = string.Join(", ", validResultTypes.Keys);
+                return JsonSerializer.Serialize(new { error = $"Invalid result type '{resultType}'. Valid options: {validOptions}" });
             }
 
             // Validate resolution options
-            var validResolutions = new ResolutionEnum[] { ResolutionEnum.Small, ResolutionEnum.Medium, ResolutionEnum.Large };
-            if (!validResolutions.Contains(resolution.ToLower()))
+            var validResolutions = new Dictionary<string, ResolutionEnum>(StringComparer.OrdinalIgnoreCase)
             {
-                return JsonSerializer.Serialize(new { error = $"Invalid resolution '{resolution}'. Valid options: small, medium, large" });
+                { "small", ResolutionEnum.Small },
+                { "medium", ResolutionEnum.Medium },
+                { "large", ResolutionEnum.Large }
+            };
+
+            if (!validResolutions.TryGetValue(resolution, out var resolutionEnum))
+            {
+                var validOptions = string.Join(", ", validResolutions.Keys);
+                return JsonSerializer.Serialize(new { error = $"Invalid resolution '{resolution}'. Valid options: {validOptions}" });
             }
 
             logger.LogInformation("Getting polygon boundary for coordinates: {Latitude}, {Longitude} with type: {ResultType}", latitude, longitude, resultType);
 
             var options = new GetPolygonOptions()
             {
-                Coordinates = new GeoPosition(longitude, latitude)
+                Coordinates = new GeoPosition(longitude, latitude),
+                ResultType = resultTypeEnum,
+                Resolution = resolutionEnum
             };
-
-            // Set ResultType based on string value (the SDK likely accepts string values)
-            switch (resultType.ToLower())
-            {
-                case "locality":
-                    options.ResultType = BoundaryResultTypeEnum.Locality;
-                    break;
-                case "postalcode":
-                    options.ResultType = BoundaryResultTypeEnum.PostalCode;
-                    break;
-                case "admindistrict":
-                    options.ResultType = BoundaryResultTypeEnum.AdminDistrict;
-                    break;
-                case "countryregion":
-                    options.ResultType = BoundaryResultTypeEnum.CountryRegion;
-                    break;
-            }
-
-            // Set Resolution based on string value
-            switch (resolution.ToLower())
-            {
-                case "small":
-                    options.Resolution = ResolutionEnum.Small;
-                    break;
-                case "medium":
-                    options.Resolution = ResolutionEnum.Medium;
-                    break;
-                case "large":
-                    options.Resolution = ResolutionEnum.Large;
-                    break;
-            }
 
             var response = await _searchClient.GetPolygonAsync(options);
 
