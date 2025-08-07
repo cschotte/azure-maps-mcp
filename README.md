@@ -4,12 +4,13 @@ A Model Context Protocol (MCP) server implementation that provides **Azure Maps*
 
 ## Overview
 
-This project implements an MCP server using Azure Functions that integrates with Azure Maps services. It allows LLMs to perform a wide range of geographic operations including:
+This project implements an MCP server using Azure Functions that integrates with Azure Maps services and comprehensive country data. It allows LLMs to perform a wide range of geographic operations including:
 
 - **Geocoding & Search**: Convert addresses or place names to coordinates and vice versa
-- **Routing**: Calculate routes, travel times, and reachable areas
+- **Routing**: Calculate routes, travel times and reachable areas
 - **Map Rendering**: Generate map tiles and static map images
 - **Geolocation**: Determine country codes and location info from IP addresses
+- **Country Intelligence**: Access comprehensive country information
 
 ## Features
 
@@ -18,9 +19,11 @@ Convert street addresses, landmarks, or place names to geographic coordinates wi
 - **Geocoding**: Address → Coordinates with detailed properties
 - **Reverse Geocoding**: Coordinates → Human-readable addresses
 - **Administrative Boundaries**: Retrieve polygon boundaries for cities, postal codes, states, countries
+- **Country Information**: Access comprehensive country data by ISO codes
+- **Country Search**: Find countries by name, continent, or geographic criteria
 - Confidence scores, match codes, and comprehensive address details
 
-### �️ Routing & Navigation
+### 🛣️ Routing & Navigation
 Calculate optimal routes and analyze travel patterns:
 - **Route Directions**: Turn-by-turn navigation between multiple points
 - **Route Matrix**: Calculate travel times/distances between multiple origins and destinations
@@ -32,8 +35,6 @@ Calculate optimal routes and analyze travel patterns:
 Generate visual map content and tiles:
 - **Map Tiles**: Retrieve individual map tiles for custom mapping applications
 - **Static Map Images**: Generate map snapshots with custom markers and paths
-- **Tile Metadata**: Access tile set information and coordinate systems
-- **Tile Coordinates**: Convert between geographic and tile coordinate systems
 - Support for road, satellite, and hybrid map styles
 
 ### 🌐 Geolocation & IP Analysis
@@ -182,6 +183,29 @@ Once running, the MCP server exposes the following tools organized by service ca
 }
 ```
 
+#### Get Country Information
+```json
+{
+  "name": "get_country_info",
+  "description": "Get comprehensive country information including demographics, geography, economics, and cultural data by ISO country code",
+  "parameters": {
+    "countryCode": "string - ISO 3166-1 alpha-2 country code (e.g., 'US', 'DE', 'JP')"
+  }
+}
+```
+
+#### Find Countries
+```json
+{
+  "name": "find_countries",
+  "description": "Find countries by name, continent, or other criteria for regional analysis and geographic data exploration",
+  "parameters": {
+    "searchTerm": "string - Search term (partial country name, continent name like 'Europe', or other geographic identifier)",
+    "maxResults": "number - Maximum countries to return (1-50, default: 10)"
+  }
+}
+```
+
 ### 🛣️ Routing Tools
 
 #### Get Route Directions
@@ -228,29 +252,29 @@ Once running, the MCP server exposes the following tools organized by service ca
 }
 ```
 
-### 🖼️ Rendering Tools
-
-#### Get Map Tile Set Metadata
+#### Analyze Route Countries
 ```json
 {
-  "name": "get_map_tileset_metadata",
-  "description": "Get metadata for map tile sets including endpoints and zoom levels",
+  "name": "analyze_route_countries",
+  "description": "Analyze a route and identify all countries that the route passes through for international travel planning and customs preparation",
   "parameters": {
-    "tileSetId": "string - microsoft.base.road|microsoft.imagery|microsoft.base.hybrid"
+    "coordinates": "string - JSON array of coordinate objects representing the route path (minimum 2 points required)"
   }
 }
 ```
+
+### 🖼️ Rendering Tools
 
 #### Get Map Tile
 ```json
 {
   "name": "get_map_tile",
-  "description": "Get a map tile image as base64-encoded PNG",
+  "description": "Retrieve a map tile image for specific geographic coordinates and zoom level with various styles",
   "parameters": {
-    "latitude": "number - Tile center latitude",
-    "longitude": "number - Tile center longitude",
+    "latitude": "number - Latitude coordinate for tile center",
+    "longitude": "number - Longitude coordinate for tile center",
     "zoomLevel": "number - Zoom level (1-22, default: 10)",
-    "tileSetId": "string - Map style (default: microsoft.base.road)",
+    "tileSetId": "string - Map style: microsoft.base.road|microsoft.base.hybrid|microsoft.imagery",
     "tileSize": "number - 256 or 512 pixels (default: 256)"
   }
 }
@@ -260,28 +284,15 @@ Once running, the MCP server exposes the following tools organized by service ca
 ```json
 {
   "name": "get_static_map_image",
-  "description": "Generate static map image with optional markers and paths",
+  "description": "Generate a custom static map image with optional markers and path overlays for reports and presentations",
   "parameters": {
-    "boundingBox": "object - {west, south, east, north} coordinates",
+    "boundingBox": "string - JSON object with {west, south, east, north} coordinates",
     "zoomLevel": "number - Zoom level (1-20, default: 10)",
     "width": "number - Image width in pixels (1-8192, default: 512)",
     "height": "number - Image height in pixels (1-8192, default: 512)",
-    "markers": "array - Optional markers with lat/lng/label/color",
-    "paths": "array - Optional paths with coordinates and styling"
-  }
-}
-```
-
-#### Get Tile Coordinates
-```json
-{
-  "name": "get_tile_coordinates",
-  "description": "Calculate tile X,Y coordinates for geographic position",
-  "parameters": {
-    "latitude": "number - Latitude coordinate",
-    "longitude": "number - Longitude coordinate",
-    "zoomLevel": "number - Zoom level (1-22, default: 10)",
-    "tileSize": "number - 256 or 512 pixels (default: 256)"
+    "mapStyle": "string - road|satellite|hybrid (default: road)",
+    "markers": "string - Optional JSON array of markers with lat/lng/label/color",
+    "paths": "string - Optional JSON array of paths with coordinates and styling"
   }
 }
 ```
@@ -334,14 +345,20 @@ azure-maps-mcp/
 │   │   ├── IAzureMapsService.cs   # Service interface
 │   │   └── AzureMapsService.cs    # Azure Maps client implementation
 │   └── Tools/
-│       ├── SearchTool.cs          # MCP tools for geocoding and search
-│       └── RenderTool.cs          # (Reserved for future rendering tools)
+│       ├── SearchTool.cs          # MCP tools for geocoding, search, and country data
+│       ├── RoutingTool.cs         # MCP tools for routing and route analysis
+│       ├── RenderTool.cs          # MCP tools for map tiles and static images
+│       └── GeolocationTool.cs     # MCP tools for IP geolocation and validation
 └── README.md
 ```
 
 ## Dependencies
 
 - **Azure.Maps.Search** (2.0.0-beta.5): Azure Maps Search SDK
+- **Azure.Maps.Routing** (1.0.0-beta.4): Azure Maps Routing SDK
+- **Azure.Maps.Rendering** (1.0.0-beta.4): Azure Maps Rendering SDK
+- **Azure.Maps.Geolocation** (1.0.0-beta.3): Azure Maps Geolocation SDK
+- **CountryData.Standard** (1.5.0): Comprehensive country information library
 - **Microsoft.Azure.Functions.Worker** (2.0.0): Azure Functions runtime
 - **Microsoft.Azure.Functions.Worker.Extensions.Mcp** (1.0.0-preview.6): MCP support for Azure Functions
 - **.NET 9.0**: Target framework
