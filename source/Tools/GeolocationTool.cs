@@ -8,6 +8,7 @@ using Azure.Maps.Mcp.Services;
 using Azure.Maps.Geolocation;
 using System.Net;
 using System.Text.Json;
+using CountryData.Standard;
 
 namespace Azure.Maps.Mcp.Tools;
 
@@ -53,26 +54,19 @@ public class GeolocationTool(IAzureMapsService azureMapsService, ILogger<Geoloca
 
             if (response.Value != null)
             {
-                var countryResult = response.Value;
-                var result = new
+                var helper = new CountryHelper();
+                Country country = helper.GetCountryByCode(response.Value.IsoCode);
+
+                if (country == null)
                 {
-                    CountryInfo = new
-                    {
-                        IsoCode = countryResult.IsoCode,
-                        CountryCode = countryResult.IsoCode // Alias for backward compatibility
-                    },
-                    RequestInfo = new
-                    {
-                        IPAddress = ipAddress,
-                        IPAddressType = parsedIP.AddressFamily.ToString(),
-                        Timestamp = DateTimeOffset.UtcNow
-                    }
-                };
+                    logger.LogWarning("No country data found for ISO code: {IsoCode}", response.Value.IsoCode);
+                    return JsonSerializer.Serialize(new { success = false, message = "No country data found for the provided ISO code" });
+                }
 
                 logger.LogInformation("Successfully retrieved country code: {CountryCode} for IP: {IPAddress}", 
-                    countryResult.IsoCode, ipAddress);
+                    country.CountryShortCode, ipAddress);
 
-                return JsonSerializer.Serialize(new { success = true, result }, new JsonSerializerOptions { WriteIndented = true });
+                return JsonSerializer.Serialize(new { success = true, country }, new JsonSerializerOptions { WriteIndented = true });
             }
 
             logger.LogWarning("No country code data returned for IP address: {IPAddress}", ipAddress);
