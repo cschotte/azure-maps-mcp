@@ -29,7 +29,7 @@ public class RoutingTool(IAzureMapsService azureMapsService, ILogger<RoutingTool
         )] ToolInvocationContext context,
         [McpToolProperty(
             "coordinates",
-            "array",
+            "string",
             "Array of coordinate objects with latitude and longitude. Must include at least origin and destination. Format: [{\"latitude\": 47.6062, \"longitude\": -122.3321}, {\"latitude\": 47.6205, \"longitude\": -122.3493}]"
         )] string coordinates,
         [McpToolProperty(
@@ -40,18 +40,18 @@ public class RoutingTool(IAzureMapsService azureMapsService, ILogger<RoutingTool
         [McpToolProperty(
             "routeType",
             "string",
-            "Type of route optimization: 'fastest' (default), 'shortest', 'eco', 'thrilling'"
+            "Type of route optimization: 'fastest' (default), 'shortest'"
         )] string routeType = "fastest",
         [McpToolProperty(
             "avoidTolls",
-            "boolean",
-            "Whether to avoid toll roads (default: false)"
-        )] bool avoidTolls = false,
+            "string",
+            "Whether to avoid toll roads: 'true' or 'false' (default: 'false')"
+        )] string avoidTolls = "false",
         [McpToolProperty(
             "avoidHighways",
-            "boolean",
-            "Whether to avoid highways (default: false)"
-        )] bool avoidHighways = false
+            "string",
+            "Whether to avoid highways: 'true' or 'false' (default: 'false')"
+        )] string avoidHighways = "false"
     )
     {
         try
@@ -84,16 +84,47 @@ public class RoutingTool(IAzureMapsService azureMapsService, ILogger<RoutingTool
 
             logger.LogInformation("Calculating route directions for {Count} points", routePoints.Count);
 
-            // Parse travel mode
-            if (!Enum.TryParse<TravelMode>(travelMode, true, out var parsedTravelMode))
+            // Validate travel mode options
+            var validTravelModes = new Dictionary<string, TravelMode>(StringComparer.OrdinalIgnoreCase)
             {
-                return JsonSerializer.Serialize(new { error = $"Invalid travel mode '{travelMode}'. Valid options: car, truck, taxi, bus, van, motorcycle, bicycle, pedestrian" });
+                { "car", TravelMode.Car },
+                { "truck", TravelMode.Truck },
+                { "taxi", TravelMode.Taxi },
+                { "bus", TravelMode.Bus },
+                { "van", TravelMode.Van },
+                { "motorcycle", TravelMode.Motorcycle },
+                { "bicycle", TravelMode.Bicycle },
+                { "pedestrian", TravelMode.Pedestrian }
+            };
+
+            if (!validTravelModes.TryGetValue(travelMode, out var parsedTravelMode))
+            {
+                var validOptions = string.Join(", ", validTravelModes.Keys);
+                return JsonSerializer.Serialize(new { error = $"Invalid travel mode '{travelMode}'. Valid options: {validOptions}" });
             }
 
-            // Parse route type
-            if (!Enum.TryParse<RouteType>(routeType, true, out var parsedRouteType))
+            // Validate route type options
+            var validRouteTypes = new Dictionary<string, RouteType>(StringComparer.OrdinalIgnoreCase)
             {
-                return JsonSerializer.Serialize(new { error = $"Invalid route type '{routeType}'. Valid options: fastest, shortest, eco, thrilling" });
+                { "fastest", RouteType.Fastest },
+                { "shortest", RouteType.Shortest }
+            };
+
+            if (!validRouteTypes.TryGetValue(routeType, out var parsedRouteType))
+            {
+                var validOptions = string.Join(", ", validRouteTypes.Keys);
+                return JsonSerializer.Serialize(new { error = $"Invalid route type '{routeType}'. Valid options: {validOptions}" });
+            }
+
+            // Parse boolean parameters
+            if (!bool.TryParse(avoidTolls, out var avoidTollsValue))
+            {
+                return JsonSerializer.Serialize(new { error = $"Invalid avoidTolls value '{avoidTolls}'. Valid options: true, false" });
+            }
+
+            if (!bool.TryParse(avoidHighways, out var avoidHighwaysValue))
+            {
+                return JsonSerializer.Serialize(new { error = $"Invalid avoidHighways value '{avoidHighways}'. Valid options: true, false" });
             }
 
             var options = new RouteDirectionOptions()
@@ -102,11 +133,12 @@ public class RoutingTool(IAzureMapsService azureMapsService, ILogger<RoutingTool
                 RouteType = parsedRouteType,
                 UseTrafficData = true,
                 ComputeBestWaypointOrder = routePoints.Count > 2,
+                InstructionsType = RouteInstructionsType.Text
             };
 
             // Configure avoidance options
-            if (avoidTolls) options.Avoid.Add(RouteAvoidType.TollRoads);
-            if (avoidHighways) options.Avoid.Add(RouteAvoidType.Motorways);
+            if (avoidTollsValue) options.Avoid.Add(RouteAvoidType.TollRoads);
+            if (avoidHighwaysValue) options.Avoid.Add(RouteAvoidType.Motorways);
 
             var routeQuery = new RouteDirectionQuery(routePoints, options);
             var response = await _routingClient.GetDirectionsAsync(routeQuery);
@@ -206,7 +238,7 @@ public class RoutingTool(IAzureMapsService azureMapsService, ILogger<RoutingTool
         [McpToolProperty(
             "routeType",
             "string",
-            "Type of route optimization: 'fastest' (default), 'shortest', 'eco'"
+            "Type of route optimization: 'fastest' (default), 'shortest'"
         )] string routeType = "fastest"
     )
     {
@@ -268,16 +300,36 @@ public class RoutingTool(IAzureMapsService azureMapsService, ILogger<RoutingTool
             logger.LogInformation("Calculating route matrix for {OriginCount} origins and {DestinationCount} destinations", 
                 originPoints.Count, destinationPoints.Count);
 
-            // Parse travel mode
-            if (!Enum.TryParse<TravelMode>(travelMode, true, out var parsedTravelMode))
+            // Validate travel mode options
+            var validTravelModes = new Dictionary<string, TravelMode>(StringComparer.OrdinalIgnoreCase)
             {
-                return JsonSerializer.Serialize(new { error = $"Invalid travel mode '{travelMode}'. Valid options: car, truck, taxi, bus, van, motorcycle, bicycle, pedestrian" });
+                { "car", TravelMode.Car },
+                { "truck", TravelMode.Truck },
+                { "taxi", TravelMode.Taxi },
+                { "bus", TravelMode.Bus },
+                { "van", TravelMode.Van },
+                { "motorcycle", TravelMode.Motorcycle },
+                { "bicycle", TravelMode.Bicycle },
+                { "pedestrian", TravelMode.Pedestrian }
+            };
+
+            if (!validTravelModes.TryGetValue(travelMode, out var parsedTravelMode))
+            {
+                var validOptions = string.Join(", ", validTravelModes.Keys);
+                return JsonSerializer.Serialize(new { error = $"Invalid travel mode '{travelMode}'. Valid options: {validOptions}" });
             }
 
-            // Parse route type
-            if (!Enum.TryParse<RouteType>(routeType, true, out var parsedRouteType))
+            // Validate route type options
+            var validRouteTypes = new Dictionary<string, RouteType>(StringComparer.OrdinalIgnoreCase)
             {
-                return JsonSerializer.Serialize(new { error = $"Invalid route type '{routeType}'. Valid options: fastest, shortest, eco" });
+                { "fastest", RouteType.Fastest },
+                { "shortest", RouteType.Shortest }
+            };
+
+            if (!validRouteTypes.TryGetValue(routeType, out var parsedRouteType))
+            {
+                var validOptions = string.Join(", ", validRouteTypes.Keys);
+                return JsonSerializer.Serialize(new { error = $"Invalid route type '{routeType}'. Valid options: {validOptions}" });
             }
 
             var matrixQuery = new RouteMatrixQuery
@@ -446,16 +498,36 @@ public class RoutingTool(IAzureMapsService azureMapsService, ILogger<RoutingTool
 
             logger.LogInformation("Calculating route range from coordinates: {Latitude}, {Longitude}", latitude, longitude);
 
-            // Parse travel mode
-            if (!Enum.TryParse<TravelMode>(travelMode, true, out var parsedTravelMode))
+            // Validate travel mode options
+            var validTravelModes = new Dictionary<string, TravelMode>(StringComparer.OrdinalIgnoreCase)
             {
-                return JsonSerializer.Serialize(new { error = $"Invalid travel mode '{travelMode}'. Valid options: car, truck, taxi, bus, van, motorcycle, bicycle, pedestrian" });
+                { "car", TravelMode.Car },
+                { "truck", TravelMode.Truck },
+                { "taxi", TravelMode.Taxi },
+                { "bus", TravelMode.Bus },
+                { "van", TravelMode.Van },
+                { "motorcycle", TravelMode.Motorcycle },
+                { "bicycle", TravelMode.Bicycle },
+                { "pedestrian", TravelMode.Pedestrian }
+            };
+
+            if (!validTravelModes.TryGetValue(travelMode, out var parsedTravelMode))
+            {
+                var validOptions = string.Join(", ", validTravelModes.Keys);
+                return JsonSerializer.Serialize(new { error = $"Invalid travel mode '{travelMode}'. Valid options: {validOptions}" });
             }
 
-            // Parse route type
-            if (!Enum.TryParse<RouteType>(routeType, true, out var parsedRouteType))
+            // Validate route type options
+            var validRouteTypes = new Dictionary<string, RouteType>(StringComparer.OrdinalIgnoreCase)
             {
-                return JsonSerializer.Serialize(new { error = $"Invalid route type '{routeType}'. Valid options: fastest, shortest" });
+                { "fastest", RouteType.Fastest },
+                { "shortest", RouteType.Shortest }
+            };
+
+            if (!validRouteTypes.TryGetValue(routeType, out var parsedRouteType))
+            {
+                var validOptions = string.Join(", ", validRouteTypes.Keys);
+                return JsonSerializer.Serialize(new { error = $"Invalid route type '{routeType}'. Valid options: {validOptions}" });
             }
 
             var options = new RouteRangeOptions(centerPoint)
