@@ -8,6 +8,7 @@ using Azure.Core.GeoJson;
 using Azure.Maps.Mcp.Services;
 using Azure.Maps.Routing;
 using System.Text.Json;
+using CountryData.Standard;
 
 namespace Azure.Maps.Mcp.Tools;
 
@@ -17,6 +18,7 @@ namespace Azure.Maps.Mcp.Tools;
 public class RoutingTool(IAzureMapsService azureMapsService, ILogger<RoutingTool> logger)
 {
     private readonly MapsRoutingClient _routingClient = azureMapsService.RoutingClient;
+    private readonly CountryHelper _countryHelper = new();
 
     /// <summary>
     /// Calculate route directions between coordinates
@@ -589,6 +591,162 @@ public class RoutingTool(IAzureMapsService azureMapsService, ILogger<RoutingTool
         catch (Exception ex)
         {
             logger.LogError(ex, "Unexpected error during route range calculation");
+            return JsonSerializer.Serialize(new { error = "An unexpected error occurred" });
+        }
+    }
+
+    /// <summary>
+    /// Analyze route waypoints and identify countries traversed
+    /// </summary>
+    [Function(nameof(AnalyzeRouteCountries))]
+    public async Task<string> AnalyzeRouteCountries(
+        [McpToolTrigger(
+            "analyze_route_countries",
+            "Analyze a route and identify all countries that the route passes through. This is valuable for international travel planning, customs preparation, visa requirements analysis, and understanding cross-border logistics. Returns detailed country information for each country along the route path."
+        )] ToolInvocationContext context,
+        [McpToolProperty(
+            "coordinates",
+            "string",
+            "JSON array of coordinate objects representing the route path. Must include at least 2 points (origin and destination). Format: '[{\"latitude\": 47.6062, \"longitude\": -122.3321}, {\"latitude\": 48.8566, \"longitude\": 2.3522}]'. More points provide better country detection accuracy."
+        )] string coordinates
+    )
+    {
+        try
+        {
+            var coordinateList = JsonSerializer.Deserialize<List<Dictionary<string, double>>>(coordinates);
+            
+            if (coordinateList == null || coordinateList.Count < 2)
+            {
+                return JsonSerializer.Serialize(new { error = "At least 2 coordinates (origin and destination) are required" });
+            }
+
+            var routePoints = new List<GeoPosition>();
+            foreach (var coord in coordinateList)
+            {
+                if (!coord.ContainsKey("latitude") || !coord.ContainsKey("longitude"))
+                {
+                    return JsonSerializer.Serialize(new { error = "Each coordinate must have 'latitude' and 'longitude' properties" });
+                }
+
+                var lat = coord["latitude"];
+                var lon = coord["longitude"];
+
+                if (lat < -90 || lat > 90 || lon < -180 || lon > 180)
+                {
+                    return JsonSerializer.Serialize(new { error = "Invalid coordinate values. Latitude must be between -90 and 90, longitude between -180 and 180" });
+                }
+
+                routePoints.Add(new GeoPosition(lon, lat));
+            }
+
+            logger.LogInformation("Analyzing route countries for {Count} waypoints", routePoints.Count);
+
+            // For this analysis, we'll use reverse geocoding to identify countries at key points
+            // In a more advanced implementation, we could calculate the actual route and sample points along it
+            var countriesFound = new HashSet<string>();
+            var waypointDetails = new List<object>();
+            
+            for (int i = 0; i < routePoints.Count; i++)
+            {
+                try
+                {
+                    var point = routePoints[i];
+                    
+                    // Use Azure Maps Search to reverse geocode the point
+                    var searchClient = azureMapsService.SearchClient;
+                    var response = await searchClient.GetReverseGeocodingAsync(point);
+                    
+                    string? countryCode = null;
+                    string? countryName = null;
+                    Country? countryInfo = null;
+                    
+                    if (response.Value?.Features != null && response.Value.Features.Any())
+                    {
+                        var feature = response.Value.Features.First();
+                        var countryRegion = feature.Properties.Address?.CountryRegion?.ToString();
+                        
+                        if (!string.IsNullOrEmpty(countryRegion) && countryRegion.Length == 2)
+                        {
+                            countryCode = countryRegion;
+                            countryInfo = _countryHelper.GetCountryByCode(countryCode);
+                            if (countryInfo != null)
+                            {
+                                countryName = countryInfo.CountryName;
+                                countriesFound.Add(countryCode);
+                            }
+                        }
+                    }
+                    
+                    waypointDetails.Add(new
+                    {
+                        WaypointIndex = i,
+                        Coordinates = new { Latitude = point.Latitude, Longitude = point.Longitude },
+                        CountryCode = countryCode,
+                        CountryName = countryName,
+                        CountryInfo = countryInfo,
+                        Address = response.Value?.Features?.FirstOrDefault()?.Properties.Address?.FormattedAddress
+                    });
+                }
+                catch (Exception ex)
+                {
+                    logger.LogWarning(ex, "Failed to analyze waypoint {Index}: {Message}", i, ex.Message);
+                    waypointDetails.Add(new
+                    {
+                        WaypointIndex = i,
+                        Coordinates = new { Latitude = routePoints[i].Latitude, Longitude = routePoints[i].Longitude },
+                        Error = ex.Message
+                    });
+                }
+            }
+
+            // Get detailed information for all unique countries found
+            var uniqueCountries = new List<Country>();
+            foreach (var countryCode in countriesFound)
+            {
+                var country = _countryHelper.GetCountryByCode(countryCode);
+                if (country != null)
+                {
+                    uniqueCountries.Add(country);
+                }
+            }
+
+            var result = new
+            {
+                RouteSummary = new
+                {
+                    TotalWaypoints = routePoints.Count,
+                    CountriesTraversed = countriesFound.Count,
+                    CountryCodes = countriesFound.ToArray()
+                },
+                WaypointAnalysis = waypointDetails,
+                CountriesDetailed = uniqueCountries,
+                TravelConsiderations = uniqueCountries.Count > 1 ? new
+                {
+                    InternationalTravel = true,
+                    BorderCrossings = uniqueCountries.Count - 1,
+                    RecommendedChecks = new[]
+                    {
+                        "Verify passport validity (6+ months remaining)",
+                        "Check visa requirements for destination countries",
+                        "Review customs regulations for items being transported",
+                        "Consider international driving permits if applicable",
+                        "Check currency exchange rates and payment methods",
+                        "Verify international mobile/data roaming plans"
+                    }
+                } : null
+            };
+
+            logger.LogInformation("Completed route country analysis: {Countries} countries detected", countriesFound.Count);
+            return JsonSerializer.Serialize(new { success = true, result }, new JsonSerializerOptions { WriteIndented = true });
+        }
+        catch (JsonException ex)
+        {
+            logger.LogError(ex, "Invalid JSON format for coordinates");
+            return JsonSerializer.Serialize(new { error = "Invalid coordinates format. Expected JSON array of coordinate objects." });
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Unexpected error during route country analysis");
             return JsonSerializer.Serialize(new { error = "An unexpected error occurred" });
         }
     }

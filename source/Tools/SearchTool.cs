@@ -9,6 +9,7 @@ using Azure.Maps.Search.Models;
 using Azure.Maps.Mcp.Services;
 using Azure.Core.GeoJson;
 using System.Text.Json;
+using CountryData.Standard;
 
 namespace Azure.Maps.Mcp.Tools;
 
@@ -18,6 +19,7 @@ namespace Azure.Maps.Mcp.Tools;
 public class SearchTool(IAzureMapsService azureMapsService, ILogger<SearchTool> logger)
 {
     private readonly MapsSearchClient _searchClient = azureMapsService.SearchClient;
+    private readonly CountryHelper _countryHelper = new();
 
     /// <summary>
     /// Converts an address or place name to geographic coordinates
@@ -80,7 +82,7 @@ public class SearchTool(IAzureMapsService azureMapsService, ILogger<SearchTool> 
                 });
 
                 logger.LogInformation("Successfully geocoded address, found {Count} results", results.Count());
-                return JsonSerializer.Serialize(new { success = true, results });
+                return JsonSerializer.Serialize(new { success = true, results }, new JsonSerializerOptions { WriteIndented = true });
             }
 
             logger.LogWarning("No results found for address: {Address}", address);
@@ -139,6 +141,19 @@ public class SearchTool(IAzureMapsService azureMapsService, ILogger<SearchTool> 
             if (response.Value?.Features != null && response.Value.Features.Any())
             {
                 var feature = response.Value.Features.First();
+                
+                // Try to get enhanced country information if country region is available
+                Country? countryInfo = null;
+                var countryRegion = feature.Properties.Address?.CountryRegion?.ToString();
+                if (!string.IsNullOrEmpty(countryRegion))
+                {
+                    // Try to match by 2-letter ISO code first (most common format)
+                    if (countryRegion.Length == 2)
+                    {
+                        countryInfo = _countryHelper.GetCountryByCode(countryRegion);
+                    }
+                }
+                
                 var result = new
                 {
                     Address = feature.Properties.Address?.FormattedAddress,
@@ -151,6 +166,7 @@ public class SearchTool(IAzureMapsService azureMapsService, ILogger<SearchTool> 
                         CountryRegion = feature.Properties.Address?.CountryRegion,
                         Locality = feature.Properties.Address?.Locality
                     },
+                    CountryInfo = countryInfo, // Enhanced country data from CountryData.Standard
                     Coordinates = new
                     {
                         Latitude = latitude,
@@ -160,7 +176,7 @@ public class SearchTool(IAzureMapsService azureMapsService, ILogger<SearchTool> 
                 };
 
                 logger.LogInformation("Successfully reverse geocoded coordinates");
-                return JsonSerializer.Serialize(new { success = true, result });
+                return JsonSerializer.Serialize(new { success = true, result }, new JsonSerializerOptions { WriteIndented = true });
             }
 
             logger.LogWarning("No address found for coordinates: {Latitude}, {Longitude}", latitude, longitude);
@@ -318,6 +334,186 @@ public class SearchTool(IAzureMapsService azureMapsService, ILogger<SearchTool> 
         {
             logger.LogError(ex, "Unexpected error during polygon retrieval");
             return JsonSerializer.Serialize(new { error = "An unexpected error occurred" });
+        }
+    }
+
+    /// <summary>
+    /// Get comprehensive country information by ISO country code
+    /// </summary>
+    [Function(nameof(GetCountryInfo))]
+    public Task<string> GetCountryInfo(
+        [McpToolTrigger(
+            "get_country_info",
+            "Get comprehensive country information including demographics, geography, economics, and cultural data by ISO country code. Returns detailed information about languages, currencies, time zones, calling codes, and more. Useful for enriching location-based data with country context."
+        )] ToolInvocationContext context,
+        [McpToolProperty(
+            "countryCode",
+            "string",
+            "ISO 3166-1 alpha-2 country code (e.g., 'US', 'DE', 'JP'). This is the standard 2-letter country code used internationally."
+        )] string countryCode
+    )
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(countryCode))
+            {
+                return Task.FromResult(JsonSerializer.Serialize(new { error = "Country code is required" }));
+            }
+
+            if (countryCode.Length != 2)
+            {
+                return Task.FromResult(JsonSerializer.Serialize(new { error = "Country code must be a 2-letter ISO 3166-1 alpha-2 code (e.g., 'US', 'DE', 'JP')" }));
+            }
+
+            logger.LogInformation("Getting country information for code: {CountryCode}", countryCode);
+
+            var country = _countryHelper.GetCountryByCode(countryCode.ToUpper());
+
+            if (country == null)
+            {
+                logger.LogWarning("No country data found for code: {CountryCode}", countryCode);
+                return Task.FromResult(JsonSerializer.Serialize(new { success = false, message = $"No country data found for code '{countryCode}'" }));
+            }
+
+            logger.LogInformation("Successfully retrieved country information for: {CountryName}", country.CountryName);
+            return Task.FromResult(JsonSerializer.Serialize(new { success = true, country }, new JsonSerializerOptions { WriteIndented = true }));
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Unexpected error during country lookup");
+            return Task.FromResult(JsonSerializer.Serialize(new { error = "An unexpected error occurred" }));
+        }
+    }
+
+    /// <summary>
+    /// Find countries by various criteria like name, continent, or region
+    /// </summary>
+    [Function(nameof(FindCountries))]
+    public Task<string> FindCountries(
+        [McpToolTrigger(
+            "find_countries",
+            "Find countries by name, continent, or other criteria. This tool helps discover countries that match specific geographic, cultural, or economic characteristics. Useful for regional analysis, travel planning, and geographic data exploration."
+        )] ToolInvocationContext context,
+        [McpToolProperty(
+            "searchTerm",
+            "string",
+            "Search term to find countries. Can be partial country name (e.g., 'Unit' for United States/Kingdom), continent name (e.g., 'Europe', 'Asia'), or other geographic identifier."
+        )] string searchTerm,
+        [McpToolProperty(
+            "maxResults",
+            "string",
+            "Maximum number of countries to return as a string number (e.g., '10'). Must be between 1 and 50. Default is '10' if not specified."
+        )] int maxResults = 10
+    )
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(searchTerm))
+            {
+                return Task.FromResult(JsonSerializer.Serialize(new { error = "Search term is required" }));
+            }
+
+            maxResults = Math.Max(1, Math.Min(50, maxResults));
+            searchTerm = searchTerm.Trim();
+
+            logger.LogInformation("Searching for countries with term: {SearchTerm}", searchTerm);
+
+            var allCountries = _countryHelper.GetCountryData();
+            var matchingCountries = new List<Country>();
+
+            foreach (var country in allCountries)
+            {
+                bool isMatch = false;
+
+                // Search by country name (case insensitive)
+                if (country.CountryName.Contains(searchTerm, StringComparison.OrdinalIgnoreCase))
+                {
+                    isMatch = true;
+                }
+                // Search by country code
+                else if (country.CountryShortCode.Equals(searchTerm, StringComparison.OrdinalIgnoreCase))
+                {
+                    isMatch = true;
+                }
+                // Search within all available country data by converting to JSON and searching
+                // This is a more flexible approach that will work with any property
+                else
+                {
+                    try
+                    {
+                        var countryJson = JsonSerializer.Serialize(country).ToLowerInvariant();
+                        var searchTermLower = searchTerm.ToLowerInvariant();
+                        
+                        // Search for continent names commonly found in country data
+                        if (searchTermLower == "europe" && countryJson.Contains("europe"))
+                        {
+                            isMatch = true;
+                        }
+                        else if (searchTermLower == "asia" && countryJson.Contains("asia"))
+                        {
+                            isMatch = true;
+                        }
+                        else if (searchTermLower == "africa" && countryJson.Contains("africa"))
+                        {
+                            isMatch = true;
+                        }
+                        else if (searchTermLower == "north america" && countryJson.Contains("north america"))
+                        {
+                            isMatch = true;
+                        }
+                        else if (searchTermLower == "south america" && countryJson.Contains("south america"))
+                        {
+                            isMatch = true;
+                        }
+                        else if (searchTermLower == "antarctica" && countryJson.Contains("antarctica"))
+                        {
+                            isMatch = true;
+                        }
+                        else if (searchTermLower == "oceania" && countryJson.Contains("oceania"))
+                        {
+                            isMatch = true;
+                        }
+                        // General search in any property
+                        else if (countryJson.Contains(searchTermLower))
+                        {
+                            isMatch = true;
+                        }
+                    }
+                    catch (Exception)
+                    {
+                        // If JSON serialization fails, skip this approach
+                    }
+                }
+
+                if (isMatch)
+                {
+                    matchingCountries.Add(country);
+                }
+
+                // If we have enough results, stop searching
+                if (matchingCountries.Count >= maxResults)
+                {
+                    break;
+                }
+            }
+
+            var results = matchingCountries.Take(maxResults).ToList();
+
+            var summary = new
+            {
+                SearchTerm = searchTerm,
+                TotalMatches = results.Count,
+                MaxResults = maxResults,
+                Countries = results
+            };
+
+            logger.LogInformation("Found {Count} countries matching '{SearchTerm}'", results.Count, searchTerm);
+            return Task.FromResult(JsonSerializer.Serialize(new { success = true, result = summary }, new JsonSerializerOptions { WriteIndented = true }));
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Unexpected error during country search");
+            return Task.FromResult(JsonSerializer.Serialize(new { error = "An unexpected error occurred" }));
         }
     }
 }
