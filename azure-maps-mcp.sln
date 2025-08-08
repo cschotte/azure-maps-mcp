@@ -2,7 +2,9 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.5.2.0
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "azure-maps-mcp", "source/azure-maps-mcp.csproj", "{E7145BB0-B6ED-1116-B7F6-38D9AA2BEF2D}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "azure-maps-mcp", "source\azure-maps-mcp.csproj", "{E7145BB0-B6ED-1116-B7F6-38D9AA2BEF2D}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "azure-maps-mcp-tests", "tests\azure-maps-mcp-tests.csproj", "{FD653BB4-84CE-1D7A-B81A-E551CD95BC02}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -14,6 +16,10 @@ Global
 		{E7145BB0-B6ED-1116-B7F6-38D9AA2BEF2D}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{E7145BB0-B6ED-1116-B7F6-38D9AA2BEF2D}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{E7145BB0-B6ED-1116-B7F6-38D9AA2BEF2D}.Release|Any CPU.Build.0 = Release|Any CPU
+		{FD653BB4-84CE-1D7A-B81A-E551CD95BC02}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{FD653BB4-84CE-1D7A-B81A-E551CD95BC02}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{FD653BB4-84CE-1D7A-B81A-E551CD95BC02}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{FD653BB4-84CE-1D7A-B81A-E551CD95BC02}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
