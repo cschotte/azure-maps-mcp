@@ -5,7 +5,9 @@ using Microsoft.Azure.Functions.Worker;
 using Microsoft.Azure.Functions.Worker.Extensions.Mcp;
 using Microsoft.Extensions.Logging;
 using Azure.Maps.Mcp.Services;
+using Azure.Maps.Mcp.Common;
 using Azure.Maps.Geolocation;
+using Azure;
 using System.Net;
 using System.Text.Json;
 using CountryData.Standard;
@@ -26,66 +28,67 @@ public class GeolocationTool(IAzureMapsService azureMapsService, ILogger<Geoloca
     public async Task<string> GetCountryCodeByIP(
         [McpToolTrigger(
             "geolocation_ip",
-            "Get country code and location information like ISO code, country name, and continent for a given IP address. Supports both IPv4 and IPv6 addresses."
+            "Get country code and location information for a given IP address. Supports both IPv4 and IPv6 addresses. Returns country code, name, and continent information."
         )] ToolInvocationContext context,
         [McpToolProperty(
             "ipAddress",
             "string",
-            "The IP address to look up (IPv4 or IPv6). Examples: '8.8.8.8', '2001:4898:80e8:b::189'"
+            "The IP address to look up (IPv4 or IPv6). Examples: '8.8.8.8', '1.1.1.1', '2001:4898:80e8:b::189'. Private/local addresses cannot be geolocated."
         )] string ipAddress
     )
     {
         try
         {
-            if (string.IsNullOrWhiteSpace(ipAddress))
+            // Validate input
+            var validation = ValidationHelper.ValidateIPAddress(ipAddress);
+            if (!validation.IsValid)
+                return ResponseHelper.CreateErrorResponse(validation.ErrorMessage!);
+
+            var parsedIP = validation.ParsedIP!;
+            
+            // Check if IP is suitable for geolocation
+            if (ValidationHelper.IsPrivateIP(parsedIP) || IPAddress.IsLoopback(parsedIP))
             {
-                return JsonSerializer.Serialize(new { error = "IP address is required" });
+                var message = IPAddress.IsLoopback(parsedIP) 
+                    ? "Loopback address refers to local machine and cannot be geolocated"
+                    : "Private IP address cannot be geolocated";
+                return ResponseHelper.CreateErrorResponse(message);
             }
 
-            if (!IPAddress.TryParse(ipAddress, out var parsedIP))
-            {
-                return JsonSerializer.Serialize(new { error = $"Invalid IP address format: '{ipAddress}'. Please provide a valid IPv4 or IPv6 address." });
-            }
+            logger.LogInformation("Processing geolocation request for IP: {IPAddress}", ipAddress);
 
-            logger.LogInformation("Getting country code for IP address: {IPAddress}", ipAddress);
-
-            // Call the Azure Maps Geolocation API
+            // Call Azure Maps API
             var response = await _geolocationClient.GetCountryCodeAsync(parsedIP);
-
-            if (response.Value != null)
+            
+            if (response?.Value?.IsoCode != null)
             {
                 var helper = new CountryHelper();
-                Country country = helper.GetCountryByCode(response.Value.IsoCode);
-
-                if (country == null)
+                var country = helper.GetCountryByCode(response.Value.IsoCode);
+                
+                if (country != null)
                 {
-                    logger.LogWarning("No country data found for ISO code: {IsoCode}", response.Value.IsoCode);
-                    return JsonSerializer.Serialize(new { success = false, message = "No country data found for the provided ISO code" });
+                    var result = ResponseHelper.CreateCountryInfo(
+                        country.CountryShortCode, 
+                        country.CountryName);
+                    
+                    logger.LogInformation("Successfully retrieved country: {CountryCode} for IP: {IPAddress}", 
+                        country.CountryShortCode, ipAddress);
+                    
+                    return ResponseHelper.CreateSuccessResponse(result);
                 }
-
-                logger.LogInformation("Successfully retrieved country code: {CountryCode} for IP: {IPAddress}", 
-                    country.CountryShortCode, ipAddress);
-
-                return JsonSerializer.Serialize(new { success = true, country }, new JsonSerializerOptions { WriteIndented = false });
             }
 
-            logger.LogWarning("No country code data returned for IP address: {IPAddress}", ipAddress);
-            return JsonSerializer.Serialize(new { success = false, message = "No country code data returned for the provided IP address" });
-        }
-        catch (FormatException ex)
-        {
-            logger.LogError(ex, "Invalid IP address format: {IPAddress}", ipAddress);
-            return JsonSerializer.Serialize(new { error = $"Invalid IP address format: '{ipAddress}'. Please provide a valid IPv4 or IPv6 address." });
+            return ResponseHelper.CreateErrorResponse("No country data available for this IP address");
         }
         catch (RequestFailedException ex)
         {
-            logger.LogError(ex, "Azure Maps API error during geolocation lookup: {Message}", ex.Message);
-            return JsonSerializer.Serialize(new { error = $"API Error: {ex.Message}" });
+            logger.LogError(ex, "Azure Maps API error for IP: {IPAddress}", ipAddress);
+            return ResponseHelper.CreateErrorResponse($"API Error: {ex.Message}");
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Unexpected error during geolocation lookup");
-            return JsonSerializer.Serialize(new { error = "An unexpected error occurred" });
+            logger.LogError(ex, "Unexpected error during geolocation lookup for IP: {IPAddress}", ipAddress);
+            return ResponseHelper.CreateErrorResponse("An unexpected error occurred");
         }
     }
 
@@ -96,116 +99,118 @@ public class GeolocationTool(IAzureMapsService azureMapsService, ILogger<Geoloca
     public async Task<string> GetCountryCodeBatch(
         [McpToolTrigger(
             "geolocation_ip_batch",
-            "Get country codes and location information for multiple IP addresses in a single request. Efficiently processes up to 100 IP addresses at once. Returns detailed country information including ISO codes, names, and continents for each IP address. Useful for batch processing of IP geolocation data."
+            "Get country codes for multiple IP addresses. Processes up to 100 IP addresses efficiently with parallel processing."
         )] ToolInvocationContext context,
         [McpToolProperty(
             "ipAddresses",
             "array",
-            "Array of IP addresses to look up as strings. Supports both IPv4 and IPv6 addresses. Maximum 100 IP addresses per request. Each IP will be processed individually and results will include success/failure status. Examples: ['8.8.8.8', '1.1.1.1', '2001:4898:80e8:b::189']"
+            "Array of IP addresses to look up. Maximum 100 addresses. Examples: [\"8.8.8.8\", \"1.1.1.1\"]"
         )] string[] ipAddresses
     )
     {
         try
         {
-            if (ipAddresses == null || ipAddresses.Length == 0)
-            {
-                return JsonSerializer.Serialize(new { error = "At least one IP address is required" });
-            }
+            // Validate input
+            var validation = ValidationHelper.ValidateArrayInput(ipAddresses, 100, "IP address");
+            if (!validation.IsValid)
+                return ResponseHelper.CreateErrorResponse(validation.ErrorMessage!);
 
-            if (ipAddresses.Length > 100)
-            {
-                return JsonSerializer.Serialize(new { error = "Maximum 100 IP addresses allowed per batch request" });
-            }
-
-            logger.LogInformation("Processing batch geolocation request for {Count} IP addresses", ipAddresses.Length);
-
-            var results = new List<object>();
-            var successCount = 0;
-            var errorCount = 0;
+            var uniqueIPs = validation.UniqueValues!;
             
-            var helper = new CountryHelper();
+            logger.LogInformation("Processing batch geolocation for {Count} unique IP addresses", uniqueIPs.Count);
 
-            foreach (var ip in ipAddresses)
-            {
-                try
-                {
-                    if (string.IsNullOrWhiteSpace(ip))
-                    {
-                        results.Add(new
-                        {
-                            IPAddress = ip,
-                            Error = "Empty or null IP address",
-                            CountryCode = (string?)null
-                        });
-                        errorCount++;
-                        continue;
-                    }
+            // Process IPs in parallel
+            var results = await ProcessIPAddressesBatch(uniqueIPs);
+            
+            var successful = results.Where(r => r.IsSuccess).ToList();
+            var failed = results.Where(r => !r.IsSuccess).Select(r => new { r.IPAddress, r.Error }).ToList();
 
-                    if (!IPAddress.TryParse(ip, out var parsedIP))
-                    {
-                        results.Add(new
-                        {
-                            IPAddress = ip,
-                            Error = "Invalid IP address format",
-                            CountryCode = (string?)null
-                        });
-                        errorCount++;
-                        continue;
-                    }
+            var response = ResponseHelper.CreateBatchSummary(successful, failed.Cast<object>().ToList(), ipAddresses.Length);
+            
+            logger.LogInformation("Completed batch geolocation: {Success}/{Total} successful", 
+                successful.Count, uniqueIPs.Count);
 
-                    var response = await _geolocationClient.GetCountryCodeAsync(parsedIP);
-
-                    if (response.Value != null)
-                    {
-                        Country country = helper.GetCountryByCode(response.Value.IsoCode);
-
-                        results.Add(country);
-                        successCount++;
-                    }
-                    else
-                    {
-                        results.Add(new
-                        {
-                            IPAddress = ip,
-                            Error = "No country code data returned",
-                            CountryCode = (string?)null
-                        });
-                        errorCount++;
-                    }
-                }
-                catch (Exception ex)
-                {
-                    logger.LogWarning(ex, "Error processing IP address {IP}: {Message}", ip, ex.Message);
-                    results.Add(new
-                    {
-                        IPAddress = ip,
-                        Error = ex.Message,
-                        CountryCode = (string?)null
-                    });
-                    errorCount++;
-                }
-            }
-
-            var result = new
-            {
-                Summary = new
-                {
-                    TotalRequests = ipAddresses.Length,
-                    SuccessfulRequests = successCount,
-                    FailedRequests = errorCount
-                },
-                Results = results
-            };
-
-            logger.LogInformation("Completed batch geolocation request: {Success}/{Total} successful", 
-                successCount, ipAddresses.Length);
-
-            return JsonSerializer.Serialize(new { success = true, result }, new JsonSerializerOptions { WriteIndented = false });
+            return ResponseHelper.CreateSuccessResponse(response);
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Unexpected error during batch geolocation lookup");
-            return JsonSerializer.Serialize(new { error = "An unexpected error occurred during batch processing" });
+            logger.LogError(ex, "Error during batch geolocation");
+            return ResponseHelper.CreateErrorResponse("Batch processing error");
+        }
+    }
+
+    /// <summary>
+    /// Processes IP addresses with parallel optimization
+    /// </summary>
+    private async Task<List<GeolocationResult>> ProcessIPAddressesBatch(HashSet<string> ipAddresses)
+    {
+        var helper = new CountryHelper();
+        var semaphore = new SemaphoreSlim(10, 10);
+        
+        var tasks = ipAddresses.Select(async ip =>
+        {
+            await semaphore.WaitAsync();
+            try
+            {
+                return await ProcessSingleIPAddress(ip, helper);
+            }
+            finally
+            {
+                semaphore.Release();
+            }
+        });
+
+        var results = await Task.WhenAll(tasks);
+        return results.ToList();
+    }
+
+    /// <summary>
+    /// Processes a single IP address
+    /// </summary>
+    private async Task<GeolocationResult> ProcessSingleIPAddress(string ip, CountryHelper helper)
+    {
+        try
+        {
+            var validation = ValidationHelper.ValidateIPAddress(ip);
+            if (!validation.IsValid)
+            {
+                return new GeolocationResult
+                {
+                    IPAddress = ip,
+                    IsSuccess = false,
+                    Error = "Invalid IP address format"
+                };
+            }
+
+            var response = await _geolocationClient.GetCountryCodeAsync(validation.ParsedIP!);
+
+            if (response.Value?.IsoCode != null)
+            {
+                var country = helper.GetCountryByCode(response.Value.IsoCode);
+                
+                return new GeolocationResult
+                {
+                    IPAddress = ip,
+                    IsSuccess = true,
+                    Country = country
+                };
+            }
+
+            return new GeolocationResult
+            {
+                IPAddress = ip,
+                IsSuccess = false,
+                Error = "No country data available"
+            };
+        }
+        catch (Exception ex)
+        {
+            return new GeolocationResult
+            {
+                IPAddress = ip,
+                IsSuccess = false,
+                Error = ex.Message
+            };
         }
     }
 
@@ -216,88 +221,52 @@ public class GeolocationTool(IAzureMapsService azureMapsService, ILogger<Geoloca
     public Task<string> ValidateIPAddress(
         [McpToolTrigger(
             "geolocation_ip_validate",
-            "Validate IP address format and get comprehensive technical information about the IP address. Returns validation status, address family (IPv4/IPv6), scope information (public/private/loopback), and technical details. Useful for IP address validation and analysis before performing geolocation lookups."
+            "Validate IP address format and get basic information about the IP address. Returns validation status and address type."
         )] ToolInvocationContext context,
         [McpToolProperty(
             "ipAddress",
             "string",
-            "The IP address to validate and analyze. Supports both IPv4 and IPv6 formats. Examples: '8.8.8.8' (IPv4), '2001:4898:80e8:b::189' (IPv6). Returns detailed technical information including address family, scope, and whether it's a private or public address."
+            "The IP address to validate. Examples: '8.8.8.8' (IPv4), '2001:4898:80e8:b::189' (IPv6)."
         )] string ipAddress
     )
     {
         try
         {
-            if (string.IsNullOrWhiteSpace(ipAddress))
-            {
-                return Task.FromResult(JsonSerializer.Serialize(new { error = "IP address is required" }));
-            }
+            var validation = ValidationHelper.ValidateIPAddress(ipAddress);
+            if (!validation.IsValid)
+                return Task.FromResult(ResponseHelper.CreateErrorResponse(validation.ErrorMessage!));
 
-            if (!IPAddress.TryParse(ipAddress, out var parsedIP))
-            {
-                return Task.FromResult(JsonSerializer.Serialize(new { 
-                    error = $"Invalid IP address format: '{ipAddress}'. Please provide a valid IPv4 or IPv6 address.",
-                    isValid = false
-                }));
-            }
-
+            var parsedIP = validation.ParsedIP!;
             var result = new
             {
-                ValidationResult = new
-                {
-                    IsValid = true,
-                    IPAddress = ipAddress,
-                    AddressFamily = parsedIP.AddressFamily.ToString(),
-                    IsIPv4 = parsedIP.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork,
-                    IsIPv6 = parsedIP.AddressFamily == System.Net.Sockets.AddressFamily.InterNetworkV6,
-                    IsLoopback = IPAddress.IsLoopback(parsedIP),
-                    IsPrivate = IsPrivateIP(parsedIP),
-                    Scope = parsedIP.IsIPv6LinkLocal ? "Link-Local" : 
-                           parsedIP.IsIPv6SiteLocal ? "Site-Local" : 
-                           parsedIP.IsIPv6Multicast ? "Multicast" : "Global"
-                },
-                TechnicalInfo = new
-                {
-                    Bytes = parsedIP.GetAddressBytes(),
-                    ScopeId = parsedIP.AddressFamily == System.Net.Sockets.AddressFamily.InterNetworkV6 ? parsedIP.ScopeId : (long?)null,
-                    Timestamp = DateTimeOffset.UtcNow
-                }
+                IsValid = true,
+                IPAddress = ipAddress,
+                AddressFamily = parsedIP.AddressFamily.ToString(),
+                IsIPv4 = parsedIP.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork,
+                IsIPv6 = parsedIP.AddressFamily == System.Net.Sockets.AddressFamily.InterNetworkV6,
+                IsLoopback = IPAddress.IsLoopback(parsedIP),
+                IsPrivate = ValidationHelper.IsPrivateIP(parsedIP),
+                CanGeolocate = !ValidationHelper.IsPrivateIP(parsedIP) && !IPAddress.IsLoopback(parsedIP)
             };
 
-            logger.LogInformation("Successfully validated IP address: {IPAddress} (Type: {Type})", 
-                ipAddress, parsedIP.AddressFamily);
-
-            return Task.FromResult(JsonSerializer.Serialize(new { success = true, result }, new JsonSerializerOptions { WriteIndented = false }));
+            logger.LogInformation("Successfully validated IP address: {IPAddress}", ipAddress);
+            return Task.FromResult(ResponseHelper.CreateSuccessResponse(result));
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Unexpected error during IP address validation");
-            return Task.FromResult(JsonSerializer.Serialize(new { error = "An unexpected error occurred during validation" }));
+            logger.LogError(ex, "Error during IP validation");
+            return Task.FromResult(ResponseHelper.CreateErrorResponse("Validation error"));
         }
     }
 
     /// <summary>
-    /// Helper method to determine if an IP address is private
+    /// Represents the result of processing a single IP address
     /// </summary>
-    private static bool IsPrivateIP(IPAddress ip)
+    private class GeolocationResult
     {
-        if (ip.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
-        {
-            var bytes = ip.GetAddressBytes();
-            // 10.0.0.0/8
-            if (bytes[0] == 10) return true;
-            // 172.16.0.0/12
-            if (bytes[0] == 172 && bytes[1] >= 16 && bytes[1] <= 31) return true;
-            // 192.168.0.0/16
-            if (bytes[0] == 192 && bytes[1] == 168) return true;
-            // 127.0.0.0/8 (loopback)
-            if (bytes[0] == 127) return true;
-        }
-        else if (ip.AddressFamily == System.Net.Sockets.AddressFamily.InterNetworkV6)
-        {
-            // IPv6 private ranges
-            return ip.IsIPv6LinkLocal || ip.IsIPv6SiteLocal || IPAddress.IsLoopback(ip);
-        }
-        
-        return false;
+        public string IPAddress { get; set; } = string.Empty;
+        public bool IsSuccess { get; set; }
+        public Country? Country { get; set; }
+        public string? Error { get; set; }
     }
 }

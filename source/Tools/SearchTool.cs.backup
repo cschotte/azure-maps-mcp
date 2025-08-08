@@ -45,13 +45,12 @@ public class SearchTool(IAzureMapsService azureMapsService, ILogger<SearchTool> 
     {
         try
         {
-            // Validate input
-            var addressValidation = ValidationHelper.ValidateStringInput(address, 2, 2048, "Address");
-            if (!addressValidation.IsValid)
-                return ResponseHelper.CreateErrorResponse(addressValidation.ErrorMessage!);
-
-            var rangeValidation = ValidationHelper.ValidateRange(maxResults, 1, 20, "maxResults");
-            maxResults = rangeValidation.NormalizedValue;
+            // Validate input parameters
+            var validationError = ValidateGeocodingInput(address, ref maxResults);
+            if (validationError != null)
+            {
+                return JsonSerializer.Serialize(new { error = validationError });
+            }
 
             var normalizedAddress = address.Trim();
             logger.LogInformation("Geocoding address: '{Address}' (requesting {MaxResults} results)", normalizedAddress, maxResults);
@@ -65,44 +64,75 @@ public class SearchTool(IAzureMapsService azureMapsService, ILogger<SearchTool> 
                 {
                     ResultIndex = index + 1,
                     Address = feature.Properties.Address?.FormattedAddress,
-                    Coordinates = ResponseHelper.CreateLocationSummary(
-                        feature.Geometry.Coordinates[1], 
-                        feature.Geometry.Coordinates[0]),
+                    Coordinates = new
+                    {
+                        Longitude = feature.Geometry.Coordinates[0],
+                        Latitude = feature.Geometry.Coordinates[1]
+                    },
                     AddressComponents = new
                     {
                         StreetNumber = feature.Properties.Address?.StreetNumber,
                         StreetName = feature.Properties.Address?.StreetName,
+                        Neighborhood = feature.Properties.Address?.Neighborhood,
                         Locality = feature.Properties.Address?.Locality,
                         PostalCode = feature.Properties.Address?.PostalCode,
                         CountryRegion = feature.Properties.Address?.CountryRegion
                     },
-                    Confidence = feature.Properties.Confidence.ToString()
+                    QualityMetrics = new
+                    {
+                        Confidence = feature.Properties.Confidence.ToString(),
+                        MatchCodes = feature.Properties.MatchCodes?.Select(mc => mc.ToString()).ToArray(),
+                        ResultRank = index + 1,
+                        AddressCompleteness = CalculateAddressCompleteness(feature.Properties.Address)
+                    },
+                    LocationType = DetermineLocationType(feature.Properties.Address, feature.Properties.MatchCodes)
                 }).ToList();
 
                 var result = new
                 {
-                    Query = normalizedAddress,
-                    TotalResults = results.Count,
-                    Results = results
+                    Query = new
+                    {
+                        OriginalAddress = normalizedAddress,
+                        MaxResults = maxResults,
+                        ProcessedAt = DateTime.UtcNow
+                    },
+                    Summary = new
+                    {
+                        TotalResults = results.Count,
+                        HasMultipleResults = results.Count > 1,
+                        ResultsLimited = results.Count == maxResults,
+                        RecommendedResult = results.FirstOrDefault()
+                    },
+                    Results = results,
+                    SearchInsights = new
+                    {
+                        QueryType = DetermineGeocodingQueryType(normalizedAddress),
+                        QualityAssessment = results.Any() ? AssessOverallQuality(results.First()) : "No Results"
+                    }
                 };
 
-                logger.LogInformation("Successfully geocoded address: found {Count} results", results.Count);
-                return ResponseHelper.CreateSuccessResponse(result);
+                logger.LogInformation("Successfully geocoded address '{Address}': found {Count} results with confidence levels", 
+                    normalizedAddress, results.Count);
+
+                return JsonSerializer.Serialize(new { success = true, result }, new JsonSerializerOptions { WriteIndented = false });
             }
 
-            // No results found
-            var suggestions = new List<string>
-            {
-                "Try a more complete address with city and state/country",
-                "Check spelling of street names and city names"
-            };
-            
-            return ResponseHelper.CreateValidationError("No results found for the provided address", suggestions);
+            logger.LogWarning("No geocoding results found for address: '{Address}'", normalizedAddress);
+            return JsonSerializer.Serialize(new { 
+                success = false, 
+                message = "No results found",
+                searchHints = GenerateGeocodingSearchHints(normalizedAddress)
+            });
+        }
+        catch (RequestFailedException ex)
+        {
+            logger.LogError(ex, "Azure Maps API error during geocoding of '{Address}': {Message}", address, ex.Message);
+            return JsonSerializer.Serialize(new { error = $"API Error: {ex.Message}" });
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Error during geocoding for address: {Address}", address);
-            return ResponseHelper.CreateErrorResponse("Geocoding error occurred");
+            logger.LogError(ex, "Unexpected error during geocoding of '{Address}'", address);
+            return JsonSerializer.Serialize(new { error = "An unexpected error occurred" });
         }
     }
 
@@ -418,60 +448,90 @@ public class SearchTool(IAzureMapsService azureMapsService, ILogger<SearchTool> 
     public async Task<string> ReverseGeocoding(
         [McpToolTrigger(
             "search_geocoding_reverse",
-            "Convert geographic coordinates into street addresses and location details."
+            "Convert precise geographic coordinates (latitude and longitude) into human-readable street addresses and location details. This reverse geocoding service is essential for location-based applications that need to display meaningful address information from GPS coordinates or map click events. Returns formatted addresses with detailed components including street names, postal codes, and administrative boundaries."
         )] ToolInvocationContext context,
         [McpToolProperty(
             "latitude",
             "string",
-            "Latitude coordinate (-90 to 90). Example: '47.6062'"
+            "Latitude coordinate as a decimal number (e.g., '47.6062'). Must be between -90 and 90 degrees."
         )] double latitude,
         [McpToolProperty(
             "longitude",
             "string",
-            "Longitude coordinate (-180 to 180). Example: '-122.3321'"
+            "Longitude coordinate as a decimal number (e.g., '-122.3321'). Must be between -180 and 180 degrees."
         )] double longitude
     )
     {
         try
         {
-            // Validate coordinates
-            var validation = ValidationHelper.ValidateCoordinates(latitude, longitude);
-            if (!validation.IsValid)
-                return ResponseHelper.CreateErrorResponse(validation.ErrorMessage!);
+            if (latitude < -90 || latitude > 90)
+            {
+                return JsonSerializer.Serialize(new { error = "Latitude must be between -90 and 90 degrees" });
+            }
+
+            if (longitude < -180 || longitude > 180)
+            {
+                return JsonSerializer.Serialize(new { error = "Longitude must be between -180 and 180 degrees" });
+            }
 
             logger.LogInformation("Reverse geocoding coordinates: {Latitude}, {Longitude}", latitude, longitude);
 
             var coordinates = new GeoPosition(longitude, latitude);
             var response = await _searchClient.GetReverseGeocodingAsync(coordinates);
 
-            if (response.Value?.Features?.Any() == true)
+            if (response.Value?.Features != null && response.Value.Features.Any())
             {
                 var feature = response.Value.Features.First();
+                
+                // Try to get enhanced country information if country region is available
+                Country? countryInfo = null;
+                var countryRegion = feature.Properties.Address?.CountryRegion?.ToString();
+                if (!string.IsNullOrEmpty(countryRegion))
+                {
+                    // Try to match by 2-letter ISO code first (most common format)
+                    if (countryRegion.Length == 2)
+                    {
+                        countryInfo = _countryHelper.GetCountryByCode(countryRegion);
+                    }
+                }
                 
                 var result = new
                 {
                     Address = feature.Properties.Address?.FormattedAddress,
-                    AddressComponents = new
+                    AddressDetails = new
                     {
                         StreetNumber = feature.Properties.Address?.StreetNumber,
                         StreetName = feature.Properties.Address?.StreetName,
+                        Neighborhood = feature.Properties.Address?.Neighborhood,
                         PostalCode = feature.Properties.Address?.PostalCode,
                         CountryRegion = feature.Properties.Address?.CountryRegion,
                         Locality = feature.Properties.Address?.Locality
                     },
-                    Coordinates = ResponseHelper.CreateLocationSummary(latitude, longitude)
+                    CountryInfo = countryInfo, // Enhanced country data from CountryData.Standard
+                    Coordinates = new
+                    {
+                        Latitude = latitude,
+                        Longitude = longitude
+                    },
+                    MatchCodes = feature.Properties.MatchCodes?.Select(mc => mc.ToString()).ToArray()
                 };
 
                 logger.LogInformation("Successfully reverse geocoded coordinates");
-                return ResponseHelper.CreateSuccessResponse(result);
+                return JsonSerializer.Serialize(new { success = true, result }, new JsonSerializerOptions { WriteIndented = false });
             }
 
-            return ResponseHelper.CreateErrorResponse("No address found for these coordinates");
+            logger.LogWarning("No address found for coordinates: {Latitude}, {Longitude}", latitude, longitude);
+            return JsonSerializer.Serialize(new { success = false, message = "No address found for these coordinates" });
+        }
+        catch (RequestFailedException ex)
+        {
+            logger.LogError(ex, "Azure Maps API error during reverse geocoding: {Message}", ex.Message);
+            return JsonSerializer.Serialize(new { error = $"API Error: {ex.Message}" });
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Error during reverse geocoding");
-            return ResponseHelper.CreateErrorResponse("Reverse geocoding error occurred");
+            logger.LogError(ex, "Unexpected error during reverse geocoding");
+            return JsonSerializer.Serialize(new { error = "An unexpected error occurred" });
         }
     }
     

@@ -631,22 +631,19 @@ public class RoutingTool(IAzureMapsService azureMapsService, ILogger<RoutingTool
                     string? countryCode = null;
                     string? countryName = null;
                     Country? countryInfo = null;
-                    
+
                     if (response.Value?.Features != null && response.Value.Features.Any())
                     {
                         var feature = response.Value.Features.First();
-                        var countryRegion = feature.Properties.Address?.CountryRegion?.ToString();
-                        
-                        if (!string.IsNullOrEmpty(countryRegion) && countryRegion.Length == 2)
-                        {
-                            countryCode = countryRegion;
-                            countryInfo = _countryHelper.GetCountryByCode(countryCode);
-                            if (countryInfo != null)
-                            {
-                                countryName = countryInfo.CountryName;
-                                countriesFound.Add(countryCode);
-                            }
-                        }
+                        var address = feature.Properties.Address;
+
+                        countryCode = address.CountryRegion.Iso;
+                        countryName = address.CountryRegion.Name;
+                        countryInfo = _countryHelper.GetCountryByCode(countryCode);
+                    }
+                    else
+                    {
+                        logger.LogDebug("No country found for waypoint {Index}: {Latitude}, {Longitude}", i, point.Latitude, point.Longitude);
                     }
                     
                     waypointDetails.Add(new
