@@ -16,38 +16,6 @@ This project implements an MCP server using Azure Functions that integrates with
 - **Geolocation**: Determine country codes and location info from IP addresses
 - **Country Intelligence**: Access comprehensive country information
 
-## Features
-
-### 🗺️ Search & Geocoding
-Convert street addresses, landmarks, or place names to geographic coordinates with detailed address information:
-- **Geocoding**: Address → Coordinates with detailed properties
-- **Reverse Geocoding**: Coordinates → Human-readable addresses
-- **Administrative Boundaries**: Retrieve polygon boundaries for cities, postal codes, states, countries
-- **Country Information**: Access comprehensive country data by ISO codes
-- **Country Search**: Find countries by name, continent, or geographic criteria
-- Confidence scores, match codes, and comprehensive address details
-
-### 🛣️ Routing & Navigation
-Calculate optimal routes and analyze travel patterns:
-- **Route Directions**: Turn-by-turn navigation between multiple points
-- **Route Matrix**: Calculate travel times/distances between multiple origins and destinations
-- **Route Range (Isochrone)**: Find areas reachable within time or distance budgets
-- Support for multiple travel modes (car, truck, bicycle, pedestrian, etc.)
-- Traffic-aware routing and route optimization options
-
-### 🖼️ Map Rendering & Visualization
-Generate visual map content and tiles:
-- **Map Tiles**: Retrieve individual map tiles for custom mapping applications
-- **Static Map Images**: Generate map snapshots with custom markers and paths
-- Support for road, satellite, and hybrid map styles
-
-### 🌐 Geolocation & IP Analysis
-Determine geographic information from IP addresses:
-- **IP Geolocation**: Get country codes from IPv4/IPv6 addresses
-- **Batch IP Processing**: Process multiple IP addresses efficiently
-- **IP Validation**: Validate IP address formats and get technical details
-- Support for both public and private IP address analysis
-
 ## ⚙️ Supported Tools
 
 Interact with these Azure Maps services through the following MCP tools:
