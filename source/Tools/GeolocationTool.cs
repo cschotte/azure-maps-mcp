@@ -25,7 +25,7 @@ public class GeolocationTool(IAzureMapsService azureMapsService, ILogger<Geoloca
     [Function(nameof(GetCountryCodeByIP))]
     public async Task<string> GetCountryCodeByIP(
         [McpToolTrigger(
-            "get_country_code_by_ip",
+            "geolocation_ip",
             "Get country code and location information like ISO code, country name, and continent for a given IP address. Supports both IPv4 and IPv6 addresses."
         )] ToolInvocationContext context,
         [McpToolProperty(
@@ -66,7 +66,7 @@ public class GeolocationTool(IAzureMapsService azureMapsService, ILogger<Geoloca
                 logger.LogInformation("Successfully retrieved country code: {CountryCode} for IP: {IPAddress}", 
                     country.CountryShortCode, ipAddress);
 
-                return JsonSerializer.Serialize(new { success = true, country }, new JsonSerializerOptions { WriteIndented = true });
+                return JsonSerializer.Serialize(new { success = true, country }, new JsonSerializerOptions { WriteIndented = false });
             }
 
             logger.LogWarning("No country code data returned for IP address: {IPAddress}", ipAddress);
@@ -95,31 +95,29 @@ public class GeolocationTool(IAzureMapsService azureMapsService, ILogger<Geoloca
     [Function(nameof(GetCountryCodeBatch))]
     public async Task<string> GetCountryCodeBatch(
         [McpToolTrigger(
-            "get_country_code_batch",
+            "geolocation_ip_batch",
             "Get country codes and location information for multiple IP addresses in a single request. Efficiently processes up to 100 IP addresses at once. Returns detailed country information including ISO codes, names, and continents for each IP address. Useful for batch processing of IP geolocation data."
         )] ToolInvocationContext context,
         [McpToolProperty(
             "ipAddresses",
-            "string",
-            "JSON array of IP addresses to look up as strings. Supports both IPv4 and IPv6 addresses. Format: '[\"8.8.8.8\", \"1.1.1.1\", \"2001:4898:80e8:b::189\"]'. Maximum 100 IP addresses per request. Each IP will be processed individually and results will include success/failure status."
-        )] string ipAddresses
+            "array",
+            "Array of IP addresses to look up as strings. Supports both IPv4 and IPv6 addresses. Maximum 100 IP addresses per request. Each IP will be processed individually and results will include success/failure status. Examples: ['8.8.8.8', '1.1.1.1', '2001:4898:80e8:b::189']"
+        )] string[] ipAddresses
     )
     {
         try
         {
-            var ipList = JsonSerializer.Deserialize<List<string>>(ipAddresses);
-            
-            if (ipList == null || ipList.Count == 0)
+            if (ipAddresses == null || ipAddresses.Length == 0)
             {
                 return JsonSerializer.Serialize(new { error = "At least one IP address is required" });
             }
 
-            if (ipList.Count > 100)
+            if (ipAddresses.Length > 100)
             {
                 return JsonSerializer.Serialize(new { error = "Maximum 100 IP addresses allowed per batch request" });
             }
 
-            logger.LogInformation("Processing batch geolocation request for {Count} IP addresses", ipList.Count);
+            logger.LogInformation("Processing batch geolocation request for {Count} IP addresses", ipAddresses.Length);
 
             var results = new List<object>();
             var successCount = 0;
@@ -127,7 +125,7 @@ public class GeolocationTool(IAzureMapsService azureMapsService, ILogger<Geoloca
             
             var helper = new CountryHelper();
 
-            foreach (var ip in ipList)
+            foreach (var ip in ipAddresses)
             {
                 try
                 {
@@ -192,7 +190,7 @@ public class GeolocationTool(IAzureMapsService azureMapsService, ILogger<Geoloca
             {
                 Summary = new
                 {
-                    TotalRequests = ipList.Count,
+                    TotalRequests = ipAddresses.Length,
                     SuccessfulRequests = successCount,
                     FailedRequests = errorCount
                 },
@@ -200,14 +198,9 @@ public class GeolocationTool(IAzureMapsService azureMapsService, ILogger<Geoloca
             };
 
             logger.LogInformation("Completed batch geolocation request: {Success}/{Total} successful", 
-                successCount, ipList.Count);
+                successCount, ipAddresses.Length);
 
-            return JsonSerializer.Serialize(new { success = true, result }, new JsonSerializerOptions { WriteIndented = true });
-        }
-        catch (JsonException ex)
-        {
-            logger.LogError(ex, "Invalid JSON format for IP addresses");
-            return JsonSerializer.Serialize(new { error = "Invalid JSON format for IP addresses. Expected array of strings." });
+            return JsonSerializer.Serialize(new { success = true, result }, new JsonSerializerOptions { WriteIndented = false });
         }
         catch (Exception ex)
         {
@@ -222,7 +215,7 @@ public class GeolocationTool(IAzureMapsService azureMapsService, ILogger<Geoloca
     [Function(nameof(ValidateIPAddress))]
     public Task<string> ValidateIPAddress(
         [McpToolTrigger(
-            "validate_ip_address",
+            "geolocation_ip_validate",
             "Validate IP address format and get comprehensive technical information about the IP address. Returns validation status, address family (IPv4/IPv6), scope information (public/private/loopback), and technical details. Useful for IP address validation and analysis before performing geolocation lookups."
         )] ToolInvocationContext context,
         [McpToolProperty(
@@ -273,7 +266,7 @@ public class GeolocationTool(IAzureMapsService azureMapsService, ILogger<Geoloca
             logger.LogInformation("Successfully validated IP address: {IPAddress} (Type: {Type})", 
                 ipAddress, parsedIP.AddressFamily);
 
-            return Task.FromResult(JsonSerializer.Serialize(new { success = true, result }, new JsonSerializerOptions { WriteIndented = true }));
+            return Task.FromResult(JsonSerializer.Serialize(new { success = true, result }, new JsonSerializerOptions { WriteIndented = false }));
         }
         catch (Exception ex)
         {

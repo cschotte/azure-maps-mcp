@@ -13,6 +13,15 @@ using CountryData.Standard;
 namespace Azure.Maps.Mcp.Tools;
 
 /// <summary>
+/// Represents a coordinate for routing operations
+/// </summary>
+public class CoordinateInfo
+{
+    public double Latitude { get; set; }
+    public double Longitude { get; set; }
+}
+
+/// <summary>
 /// Azure Maps Routing Tool providing route directions, route matrix, and route range capabilities
 /// </summary>
 public class RoutingTool(IAzureMapsService azureMapsService, ILogger<RoutingTool> logger)
@@ -26,55 +35,48 @@ public class RoutingTool(IAzureMapsService azureMapsService, ILogger<RoutingTool
     [Function(nameof(GetRouteDirections))]
     public async Task<string> GetRouteDirections(
         [McpToolTrigger(
-            "get_route_directions",
+            "routing_directions",
             "Calculate detailed driving/walking/cycling directions between two or more geographic coordinates. Returns comprehensive route information including total distance, estimated travel time, turn-by-turn navigation instructions, and route geometry. Supports multiple travel modes (car, bicycle, pedestrian, etc.) and route optimization preferences (fastest vs shortest). Can handle waypoints for multi-stop routes."
         )] ToolInvocationContext context,
         [McpToolProperty(
             "coordinates",
-            "string",
-            "JSON array of coordinate objects with latitude and longitude properties. Must include at least 2 points (origin and destination). Additional points will be treated as waypoints. Format: '[{\"latitude\": 47.6062, \"longitude\": -122.3321}, {\"latitude\": 47.6205, \"longitude\": -122.3493}]'. First coordinate is origin, last is destination."
-        )] string coordinates,
+            "array",
+            "Array of coordinate objects with latitude and longitude properties. Must include at least 2 points (origin and destination). Additional points will be treated as waypoints. First coordinate is origin, last is destination. Example: [{'latitude': 47.6062, 'longitude': -122.3321}, {'latitude': 47.6205, 'longitude': -122.3493}]"
+        )] CoordinateInfo[] coordinates,
         [McpToolProperty(
             "travelMode",
             "string",
-            "Mode of travel: 'car' (default), 'truck', 'taxi', 'bus', 'van', 'motorcycle', 'bicycle', 'pedestrian'"
+            "Mode of travel: 'car' (default), 'truck', 'taxi', 'bus', 'van', 'motorcycle', 'bicycle', 'pedestrian'. Examples: 'car', 'bicycle', 'pedestrian'"
         )] string travelMode = "car",
         [McpToolProperty(
             "routeType",
             "string",
-            "Type of route optimization: 'fastest' (default), 'shortest'"
+            "Type of route optimization: 'fastest' (default), 'shortest'. Examples: 'fastest', 'shortest'"
         )] string routeType = "fastest",
         [McpToolProperty(
             "avoidTolls",
             "string",
-            "Whether to avoid toll roads: 'true' or 'false' (default: 'false')"
+            "Whether to avoid toll roads: 'true' or 'false' (default: 'false'). Examples: 'true', 'false'"
         )] string avoidTolls = "false",
         [McpToolProperty(
             "avoidHighways",
             "string",
-            "Whether to avoid highways: 'true' or 'false' (default: 'false')"
+            "Whether to avoid highways: 'true' or 'false' (default: 'false'). Examples: 'true', 'false'"
         )] string avoidHighways = "false"
     )
     {
         try
         {
-            var coordinateList = JsonSerializer.Deserialize<List<Dictionary<string, double>>>(coordinates);
-            
-            if (coordinateList == null || coordinateList.Count < 2)
+            if (coordinates == null || coordinates.Length < 2)
             {
                 return JsonSerializer.Serialize(new { error = "At least 2 coordinates (origin and destination) are required" });
             }
 
             var routePoints = new List<GeoPosition>();
-            foreach (var coord in coordinateList)
+            foreach (var coord in coordinates)
             {
-                if (!coord.ContainsKey("latitude") || !coord.ContainsKey("longitude"))
-                {
-                    return JsonSerializer.Serialize(new { error = "Each coordinate must have 'latitude' and 'longitude' properties" });
-                }
-
-                var lat = coord["latitude"];
-                var lon = coord["longitude"];
+                var lat = coord.Latitude;
+                var lon = coord.Longitude;
 
                 if (lat < -90 || lat > 90 || lon < -180 || lon > 180)
                 {
@@ -190,16 +192,11 @@ public class RoutingTool(IAzureMapsService azureMapsService, ILogger<RoutingTool
                     result.Summary.DistanceInKilometers, 
                     result.Summary.TravelTimeFormatted);
 
-                return JsonSerializer.Serialize(new { success = true, result }, new JsonSerializerOptions { WriteIndented = true });
+                return JsonSerializer.Serialize(new { success = true, result }, new JsonSerializerOptions { WriteIndented = false });
             }
 
             logger.LogWarning("No route found between the specified coordinates");
             return JsonSerializer.Serialize(new { success = false, message = "No route found between the specified coordinates" });
-        }
-        catch (JsonException ex)
-        {
-            logger.LogError(ex, "Invalid JSON format for coordinates");
-            return JsonSerializer.Serialize(new { error = "Invalid coordinates format. Expected JSON array of coordinate objects." });
         }
         catch (RequestFailedException ex)
         {
@@ -219,42 +216,39 @@ public class RoutingTool(IAzureMapsService azureMapsService, ILogger<RoutingTool
     [Function(nameof(GetRouteMatrix))]
     public async Task<string> GetRouteMatrix(
         [McpToolTrigger(
-            "get_route_matrix",
+            "routing_matrix",
             "Calculate travel times and distances between multiple origin and destination points in a matrix format. This is essential for optimization scenarios like delivery route planning, finding closest locations, or logistics optimization. Returns a comprehensive matrix showing travel time and distance from each origin to each destination, enabling efficient route planning and location analysis."
         )] ToolInvocationContext context,
         [McpToolProperty(
             "origins",
-            "string",
-            "JSON array of origin coordinate objects with latitude and longitude properties. Format: '[{\"latitude\": 47.6062, \"longitude\": -122.3321}, {\"latitude\": 47.6205, \"longitude\": -122.3493}]'. Each coordinate represents a starting point for route calculations."
-        )] string origins,
+            "array",
+            "Array of origin coordinate objects with latitude and longitude properties. Each coordinate represents a starting point for route calculations. Example: [{'latitude': 47.6062, 'longitude': -122.3321}, {'latitude': 47.6205, 'longitude': -122.3493}]"
+        )] CoordinateInfo[] origins,
         [McpToolProperty(
             "destinations",
-            "string",
-            "JSON array of destination coordinate objects with latitude and longitude properties. Format: '[{\"latitude\": 47.6062, \"longitude\": -122.3321}, {\"latitude\": 47.6205, \"longitude\": -122.3493}]'. Each coordinate represents an ending point for route calculations."
-        )] string destinations,
+            "array",
+            "Array of destination coordinate objects with latitude and longitude properties. Each coordinate represents an ending point for route calculations. Example: [{'latitude': 47.6740, 'longitude': -122.1215}, {'latitude': 47.6587, 'longitude': -122.1384}]"
+        )] CoordinateInfo[] destinations,
         [McpToolProperty(
             "travelMode",
             "string",
-            "Mode of travel: 'car' (default), 'truck', 'taxi', 'bus', 'van', 'motorcycle', 'bicycle', 'pedestrian'"
+            "Mode of travel: 'car' (default), 'truck', 'taxi', 'bus', 'van', 'motorcycle', 'bicycle', 'pedestrian'. Examples: 'car', 'bicycle', 'pedestrian'"
         )] string travelMode = "car",
         [McpToolProperty(
             "routeType",
             "string",
-            "Type of route optimization: 'fastest' (default), 'shortest'"
+            "Type of route optimization: 'fastest' (default), 'shortest'. Examples: 'fastest', 'shortest'"
         )] string routeType = "fastest"
     )
     {
         try
         {
-            var originsList = JsonSerializer.Deserialize<List<Dictionary<string, double>>>(origins);
-            var destinationsList = JsonSerializer.Deserialize<List<Dictionary<string, double>>>(destinations);
-            
-            if (originsList == null || originsList.Count == 0)
+            if (origins == null || origins.Length == 0)
             {
                 return JsonSerializer.Serialize(new { error = "At least one origin coordinate is required" });
             }
 
-            if (destinationsList == null || destinationsList.Count == 0)
+            if (destinations == null || destinations.Length == 0)
             {
                 return JsonSerializer.Serialize(new { error = "At least one destination coordinate is required" });
             }
@@ -263,15 +257,10 @@ public class RoutingTool(IAzureMapsService azureMapsService, ILogger<RoutingTool
             var originPoints = new List<GeoPosition>();
             var destinationPoints = new List<GeoPosition>();
 
-            foreach (var coord in originsList)
+            foreach (var coord in origins)
             {
-                if (!coord.ContainsKey("latitude") || !coord.ContainsKey("longitude"))
-                {
-                    return JsonSerializer.Serialize(new { error = "Each origin coordinate must have 'latitude' and 'longitude' properties" });
-                }
-
-                var lat = coord["latitude"];
-                var lon = coord["longitude"];
+                var lat = coord.Latitude;
+                var lon = coord.Longitude;
 
                 if (lat < -90 || lat > 90 || lon < -180 || lon > 180)
                 {
@@ -281,15 +270,10 @@ public class RoutingTool(IAzureMapsService azureMapsService, ILogger<RoutingTool
                 originPoints.Add(new GeoPosition(lon, lat));
             }
 
-            foreach (var coord in destinationsList)
+            foreach (var coord in destinations)
             {
-                if (!coord.ContainsKey("latitude") || !coord.ContainsKey("longitude"))
-                {
-                    return JsonSerializer.Serialize(new { error = "Each destination coordinate must have 'latitude' and 'longitude' properties" });
-                }
-
-                var lat = coord["latitude"];
-                var lon = coord["longitude"];
+                var lat = coord.Latitude;
+                var lon = coord.Longitude;
 
                 if (lat < -90 || lat > 90 || lon < -180 || lon > 180)
                 {
@@ -410,16 +394,11 @@ public class RoutingTool(IAzureMapsService azureMapsService, ILogger<RoutingTool
                 logger.LogInformation("Successfully calculated route matrix: {Successful}/{Total} routes", 
                     result.Summary.SuccessfulRoutes, result.Summary.TotalCombinations);
 
-                return JsonSerializer.Serialize(new { success = true, result }, new JsonSerializerOptions { WriteIndented = true });
+                return JsonSerializer.Serialize(new { success = true, result }, new JsonSerializerOptions { WriteIndented = false });
             }
 
             logger.LogWarning("No route matrix data returned");
             return JsonSerializer.Serialize(new { success = false, message = "No route matrix data returned" });
-        }
-        catch (JsonException ex)
-        {
-            logger.LogError(ex, "Invalid JSON format for coordinates");
-            return JsonSerializer.Serialize(new { error = "Invalid coordinates format. Expected JSON array of coordinate objects." });
         }
         catch (RequestFailedException ex)
         {
@@ -439,7 +418,7 @@ public class RoutingTool(IAzureMapsService azureMapsService, ILogger<RoutingTool
     [Function(nameof(GetRouteRange))]
     public async Task<string> GetRouteRange(
         [McpToolTrigger(
-            "get_route_range",
+            "routing_range",
             "Calculate the geographic area reachable within a specified time limit or distance from a starting point. This creates an 'isochrone' or 'isodistance' polygon showing all locations accessible within the given constraints. Useful for service area analysis, delivery zone planning, emergency response coverage, and accessibility studies. Returns polygon coordinates that define the reachable boundary."
         )] ToolInvocationContext context,
         [McpToolProperty(
@@ -465,12 +444,12 @@ public class RoutingTool(IAzureMapsService azureMapsService, ILogger<RoutingTool
         [McpToolProperty(
             "travelMode",
             "string",
-            "Mode of travel: 'car' (default), 'truck', 'taxi', 'bus', 'van', 'motorcycle', 'bicycle', 'pedestrian'"
+            "Mode of travel: 'car' (default), 'truck', 'taxi', 'bus', 'van', 'motorcycle', 'bicycle', 'pedestrian'. Examples: 'car', 'bicycle', 'pedestrian'"
         )] string travelMode = "car",
         [McpToolProperty(
             "routeType",
             "string",
-            "Type of route optimization: 'fastest' (default), 'shortest'"
+            "Type of route optimization: 'fastest' (default), 'shortest'. Examples: 'fastest', 'shortest'"
         )] string routeType = "fastest"
     )
     {
@@ -577,7 +556,7 @@ public class RoutingTool(IAzureMapsService azureMapsService, ILogger<RoutingTool
                 logger.LogInformation("Successfully calculated route range with {PointCount} boundary points", 
                     result.BoundaryPointCount);
 
-                return JsonSerializer.Serialize(new { success = true, result }, new JsonSerializerOptions { WriteIndented = true });
+                return JsonSerializer.Serialize(new { success = true, result }, new JsonSerializerOptions { WriteIndented = false });
             }
 
             logger.LogWarning("No reachable range data returned for coordinates: {Latitude}, {Longitude}", latitude, longitude);
@@ -601,35 +580,28 @@ public class RoutingTool(IAzureMapsService azureMapsService, ILogger<RoutingTool
     [Function(nameof(AnalyzeRouteCountries))]
     public async Task<string> AnalyzeRouteCountries(
         [McpToolTrigger(
-            "analyze_route_countries",
+            "routing_countries",
             "Analyze a route and identify all countries that the route passes through. This is valuable for international travel planning, customs preparation, visa requirements analysis, and understanding cross-border logistics. Returns detailed country information for each country along the route path."
         )] ToolInvocationContext context,
         [McpToolProperty(
             "coordinates",
-            "string",
-            "JSON array of coordinate objects representing the route path. Must include at least 2 points (origin and destination). Format: '[{\"latitude\": 47.6062, \"longitude\": -122.3321}, {\"latitude\": 48.8566, \"longitude\": 2.3522}]'. More points provide better country detection accuracy."
-        )] string coordinates
+            "array",
+            "Array of coordinate objects representing the route path. Must include at least 2 points (origin and destination). More points provide better country detection accuracy. Example: [{'latitude': 49.2827, 'longitude': -123.1207}, {'latitude': 47.6062, 'longitude': -122.3321}]"
+        )] CoordinateInfo[] coordinates
     )
     {
         try
         {
-            var coordinateList = JsonSerializer.Deserialize<List<Dictionary<string, double>>>(coordinates);
-            
-            if (coordinateList == null || coordinateList.Count < 2)
+            if (coordinates == null || coordinates.Length < 2)
             {
                 return JsonSerializer.Serialize(new { error = "At least 2 coordinates (origin and destination) are required" });
             }
 
             var routePoints = new List<GeoPosition>();
-            foreach (var coord in coordinateList)
+            foreach (var coord in coordinates)
             {
-                if (!coord.ContainsKey("latitude") || !coord.ContainsKey("longitude"))
-                {
-                    return JsonSerializer.Serialize(new { error = "Each coordinate must have 'latitude' and 'longitude' properties" });
-                }
-
-                var lat = coord["latitude"];
-                var lon = coord["longitude"];
+                var lat = coord.Latitude;
+                var lon = coord.Longitude;
 
                 if (lat < -90 || lat > 90 || lon < -180 || lon > 180)
                 {
@@ -737,12 +709,7 @@ public class RoutingTool(IAzureMapsService azureMapsService, ILogger<RoutingTool
             };
 
             logger.LogInformation("Completed route country analysis: {Countries} countries detected", countriesFound.Count);
-            return JsonSerializer.Serialize(new { success = true, result }, new JsonSerializerOptions { WriteIndented = true });
-        }
-        catch (JsonException ex)
-        {
-            logger.LogError(ex, "Invalid JSON format for coordinates");
-            return JsonSerializer.Serialize(new { error = "Invalid coordinates format. Expected JSON array of coordinate objects." });
+            return JsonSerializer.Serialize(new { success = true, result }, new JsonSerializerOptions { WriteIndented = false });
         }
         catch (Exception ex)
         {
