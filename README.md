@@ -48,6 +48,44 @@ Determine geographic information from IP addresses:
 - **IP Validation**: Validate IP address formats and get technical details
 - Support for both public and private IP address analysis
 
+## ⚙️ Supported Tools
+
+Interact with these Azure Maps services through the following MCP tools:
+
+### 🔍 Search & Geocoding
+
+**search_geocoding**: Convert street addresses, landmarks, or place names into precise geographic coordinates (latitude and longitude). Handles various address formats and returns detailed address components with confidence scores.
+
+**search_geocoding_reverse**: Convert geographic coordinates into human-readable street addresses and location details. Essential for location-based applications displaying meaningful address information from GPS coordinates.
+
+**search_polygon**: Retrieve administrative boundary polygons for geographic locations such as city limits, postal code areas, state/province boundaries, or country borders. Returns precise polygon coordinates for spatial analysis.
+
+**search_country_info**: Get comprehensive country information including demographics, geography, economics, and cultural data by ISO country code. Returns languages, currencies, time zones, calling codes, and more.
+
+**search_countries**: Find countries by name, continent, or other criteria. Helps discover countries matching specific geographic, cultural, or economic characteristics.
+
+### 🛣️ Routing & Navigation
+
+**routing_directions**: Calculate detailed driving/walking/cycling directions between geographic coordinates. Returns comprehensive route information including distance, travel time, turn-by-turn navigation, and route geometry.
+
+**routing_matrix**: Calculate travel times and distances between multiple origin and destination points in matrix format. Essential for delivery route planning, finding closest locations, and logistics optimization.
+
+**routing_range**: Calculate geographic areas reachable within specified time or distance limits from a starting point. Creates isochrone/isodistance polygons for service area analysis and accessibility studies.
+
+**routing_countries**: Analyze routes and identify all countries the route passes through. Valuable for international travel planning, customs preparation, and cross-border logistics.
+
+### 🖼️ Map Rendering
+
+**render_staticmap**: Generate custom static map images for specified geographic areas with optional markers and path overlays. Creates publication-ready map images perfect for reports, documentation, and presentations.
+
+### 🌐 Geolocation & IP Analysis
+
+**geolocation_ip**: Get country code and location information (ISO code, country name, continent) for a given IP address. Supports both IPv4 and IPv6 addresses.
+
+**geolocation_ip_batch**: Get country codes and location information for multiple IP addresses in a single request. Efficiently processes up to 100 IP addresses at once.
+
+**geolocation_ip_validate**: Validate IP address format and get comprehensive technical information. Returns validation status, address family, scope information, and technical details.
+
 ## Prerequisites
 
 - [.NET 9.0 SDK](https://dotnet.microsoft.com/download/dotnet/9.0)
@@ -73,7 +111,7 @@ Create or update the `source/local.settings.json` file with your Azure Maps subs
     "AzureWebJobsStorage": "None",
     "AzureWebJobsSecretStorageType": "Files",
     "FUNCTIONS_WORKER_RUNTIME": "dotnet-isolated",
-    "AZURE_MAPS_SUBSCRIPTION_KEY": "your-azure-maps-subscription-key-here"
+    "AZURE_MAPS_SUBSCRIPTION_KEY": "<your-azure-maps-subscription-key-here>"
   }
 }
 ```
@@ -143,198 +181,7 @@ dotnet publish --configuration Release
 func azure functionapp publish your-function-app-name
 ```
 
-## Usage
 
-Once running, the MCP server exposes the following tools organized by service category:
-
-### 🗺️ Search Tools
-
-#### Geocoding
-```json
-{
-  "name": "geocoding",
-  "description": "Convert street addresses or place names to longitude and latitude coordinates",
-  "parameters": {
-    "address": "string - Address or landmark name",
-    "maxResults": "number - Maximum results to return (1-100, default: 5)"
-  }
-}
-```
-
-#### Reverse Geocoding
-```json
-{
-  "name": "reverse_geocoding", 
-  "description": "Convert longitude and latitude coordinates to a street address",
-  "parameters": {
-    "latitude": "number - Latitude coordinate",
-    "longitude": "number - Longitude coordinate"
-  }
-}
-```
-
-#### Get Polygon
-```json
-{
-  "name": "get_polygon",
-  "description": "Get administrative boundary polygon for a specific location",
-  "parameters": {
-    "latitude": "number - Latitude coordinate",
-    "longitude": "number - Longitude coordinate", 
-    "resultType": "string - locality|postalCode1|adminDistrict1|adminDistrict2|countryRegion",
-    "resolution": "string - small|medium|large"
-  }
-}
-```
-
-#### Get Country Information
-```json
-{
-  "name": "get_country_info",
-  "description": "Get comprehensive country information including demographics, geography, economics, and cultural data by ISO country code",
-  "parameters": {
-    "countryCode": "string - ISO 3166-1 alpha-2 country code (e.g., 'US', 'DE', 'JP')"
-  }
-}
-```
-
-#### Find Countries
-```json
-{
-  "name": "find_countries",
-  "description": "Find countries by name, continent, or other criteria for regional analysis and geographic data exploration",
-  "parameters": {
-    "searchTerm": "string - Search term (partial country name, continent name like 'Europe', or other geographic identifier)",
-    "maxResults": "number - Maximum countries to return (1-50, default: 10)"
-  }
-}
-```
-
-### 🛣️ Routing Tools
-
-#### Get Route Directions
-```json
-{
-  "name": "get_route_directions",
-  "description": "Calculate route directions between coordinates with turn-by-turn instructions",
-  "parameters": {
-    "coordinates": "array - Array of lat/lng objects for waypoints",
-    "travelMode": "string - car|truck|bicycle|pedestrian (default: car)",
-    "routeType": "string - fastest|shortest|eco (default: fastest)",
-    "avoidTolls": "boolean - Avoid toll roads",
-    "avoidHighways": "boolean - Avoid highways"
-  }
-}
-```
-
-#### Get Route Matrix
-```json
-{
-  "name": "get_route_matrix",
-  "description": "Calculate travel times and distances between multiple origins and destinations",
-  "parameters": {
-    "origins": "array - Array of origin coordinate objects",
-    "destinations": "array - Array of destination coordinate objects",
-    "travelMode": "string - car|truck|bicycle|pedestrian (default: car)",
-    "routeType": "string - fastest|shortest|eco (default: fastest)"
-  }
-}
-```
-
-#### Get Route Range
-```json
-{
-  "name": "get_route_range",
-  "description": "Calculate reachable area within time or distance budget (isochrone)",
-  "parameters": {
-    "latitude": "number - Starting latitude",
-    "longitude": "number - Starting longitude",
-    "timeBudgetInSeconds": "number - Time budget (OR distanceBudgetInMeters)",
-    "distanceBudgetInMeters": "number - Distance budget (OR timeBudgetInSeconds)",
-    "travelMode": "string - car|truck|bicycle|pedestrian (default: car)"
-  }
-}
-```
-
-#### Analyze Route Countries
-```json
-{
-  "name": "analyze_route_countries",
-  "description": "Analyze a route and identify all countries that the route passes through for international travel planning and customs preparation",
-  "parameters": {
-    "coordinates": "string - JSON array of coordinate objects representing the route path (minimum 2 points required)"
-  }
-}
-```
-
-### 🖼️ Rendering Tools
-
-#### Get Map Tile
-```json
-{
-  "name": "get_map_tile",
-  "description": "Retrieve a map tile image for specific geographic coordinates and zoom level with various styles",
-  "parameters": {
-    "latitude": "number - Latitude coordinate for tile center",
-    "longitude": "number - Longitude coordinate for tile center",
-    "zoomLevel": "number - Zoom level (1-22, default: 10)",
-    "tileSetId": "string - Map style: microsoft.base.road|microsoft.base.hybrid|microsoft.imagery",
-    "tileSize": "number - 256 or 512 pixels (default: 256)"
-  }
-}
-```
-
-#### Get Static Map Image
-```json
-{
-  "name": "get_static_map_image",
-  "description": "Generate a custom static map image with optional markers and path overlays for reports and presentations",
-  "parameters": {
-    "boundingBox": "string - JSON object with {west, south, east, north} coordinates",
-    "zoomLevel": "number - Zoom level (1-20, default: 10)",
-    "width": "number - Image width in pixels (1-8192, default: 512)",
-    "height": "number - Image height in pixels (1-8192, default: 512)",
-    "mapStyle": "string - road|satellite|hybrid (default: road)",
-    "markers": "string - Optional JSON array of markers with lat/lng/label/color",
-    "paths": "string - Optional JSON array of paths with coordinates and styling"
-  }
-}
-```
-
-### 🌐 Geolocation Tools
-
-#### Get Country Code by IP
-```json
-{
-  "name": "get_country_code_by_ip",
-  "description": "Get country code and location info for an IP address",
-  "parameters": {
-    "ipAddress": "string - IPv4 or IPv6 address to look up"
-  }
-}
-```
-
-#### Get Country Code Batch
-```json
-{
-  "name": "get_country_code_batch",
-  "description": "Get country codes for multiple IP addresses",
-  "parameters": {
-    "ipAddresses": "array - Array of IP addresses (max 100)"
-  }
-}
-```
-
-#### Validate IP Address
-```json
-{
-  "name": "validate_ip_address",
-  "description": "Validate IP address format and get technical details",
-  "parameters": {
-    "ipAddress": "string - IP address to validate"
-  }
-}
-```
 
 ## Project Structure
 
