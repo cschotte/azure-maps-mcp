@@ -23,6 +23,7 @@
     <PackageReference Include="FluentAssertions" Version="8.5.0" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="9.0.8" />
     <PackageReference Include="Azure.Maps.Geolocation" Version="1.0.0-beta.3" />
+    <PackageReference Include="Azure.Maps.Search" Version="2.0.0-beta.5" />
     <PackageReference Include="CountryData.Standard" Version="1.5.0" />
   </ItemGroup>
 

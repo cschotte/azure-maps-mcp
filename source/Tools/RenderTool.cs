@@ -217,7 +217,7 @@ public class RenderTool(IAzureMapsService azureMapsService, ILogger<RenderTool> 
                     ImageData = new
                     {
                         Format = "PNG",
-                        Base64Data = base64Image,
+                        //Base64Data = base64Image,
                         SizeInBytes = imageBytes.Length,
                         DataUri = $"data:image/png;base64,{base64Image}"
                     }
