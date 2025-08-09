@@ -21,6 +21,7 @@ builder.ConfigureMcpTool("Azure Maps Tool"); // Register the tool name exposed t
 // Configure dependency injection
 builder.Services.AddSingleton<IAzureMapsService, AzureMapsService>();
 builder.Services.AddSingleton<CountryHelper>();
+builder.Services.AddHttpClient();
 
 // Build and run application
 var app = builder.Build();
