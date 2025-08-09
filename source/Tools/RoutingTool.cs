@@ -9,6 +9,7 @@ using Azure.Maps.Mcp.Services;
 using Azure.Maps.Routing;
 using System.Text.Json;
 using CountryData.Standard;
+using Azure.Maps.Mcp.Common;
 
 namespace Azure.Maps.Mcp.Tools;
 
@@ -29,48 +30,16 @@ public class RoutingTool(IAzureMapsService azureMapsService, ILogger<RoutingTool
     private readonly MapsRoutingClient _routingClient = azureMapsService.RoutingClient;
     private readonly CountryHelper _countryHelper = new();
 
-    // Shared option maps to avoid repetition
-    private static readonly Dictionary<string, TravelMode> TravelModes = new(StringComparer.OrdinalIgnoreCase)
-    {
-        { "car", TravelMode.Car },
-        { "truck", TravelMode.Truck },
-        { "taxi", TravelMode.Taxi },
-        { "bus", TravelMode.Bus },
-        { "van", TravelMode.Van },
-        { "motorcycle", TravelMode.Motorcycle },
-        { "bicycle", TravelMode.Bicycle },
-        { "pedestrian", TravelMode.Pedestrian }
-    };
-
-    private static readonly Dictionary<string, RouteType> RouteTypes = new(StringComparer.OrdinalIgnoreCase)
-    {
-        { "fastest", RouteType.Fastest },
-        { "shortest", RouteType.Shortest }
-    };
-
-    private static bool TryParseTravelMode(string value, out TravelMode mode, out string? error)
-    {
-        if (TravelModes.TryGetValue(value, out mode)) { error = null; return true; }
-        error = $"Invalid travel mode '{value}'. Valid options: {string.Join(", ", TravelModes.Keys)}"; return false;
-    }
-
-    private static bool TryParseRouteType(string value, out RouteType type, out string? error)
-    {
-        if (RouteTypes.TryGetValue(value, out type)) { error = null; return true; }
-        error = $"Invalid route type '{value}'. Valid options: {string.Join(", ", RouteTypes.Keys)}"; return false;
-    }
-
     private static bool TryParseBool(string value, string name, out bool result, out string? error)
     {
         if (bool.TryParse(value, out result)) { error = null; return true; }
         error = $"Invalid {name} value '{value}'. Valid options: true, false"; return false;
     }
-
+    
     private static bool TryValidateCoordinate(CoordinateInfo coord, out GeoPosition position)
     {
-        var lat = coord.Latitude; var lon = coord.Longitude;
-        if (lat < -90 || lat > 90 || lon < -180 || lon > 180) { position = default; return false; }
-        position = new GeoPosition(lon, lat); return true;
+        var ok = ToolsHelper.TryCreateGeoPosition(coord.Latitude, coord.Longitude, out position, out _);
+        return ok;
     }
 
     /// <summary>
@@ -127,12 +96,14 @@ public class RoutingTool(IAzureMapsService azureMapsService, ILogger<RoutingTool
             logger.LogInformation("Calculating route directions for {Count} points", routePoints.Count);
 
             // Validate travel mode options
-            if (!TryParseTravelMode(travelMode, out var parsedTravelMode, out var tmError))
-                return JsonSerializer.Serialize(new { error = tmError });
+            var tmParsed = ToolsHelper.ParseTravelMode(travelMode);
+            if (!tmParsed.IsValid) return JsonSerializer.Serialize(new { error = tmParsed.Error });
+            var parsedTravelMode = tmParsed.Value;
 
             // Validate route type options
-            if (!TryParseRouteType(routeType, out var parsedRouteType, out var rtError))
-                return JsonSerializer.Serialize(new { error = rtError });
+            var rtParsed = ToolsHelper.ParseRouteType(routeType);
+            if (!rtParsed.IsValid) return JsonSerializer.Serialize(new { error = rtParsed.Error });
+            var parsedRouteType = rtParsed.Value;
 
             // Parse boolean parameters
             if (!TryParseBool(avoidTolls, nameof(avoidTolls), out var avoidTollsValue, out var atError))
@@ -283,12 +254,14 @@ public class RoutingTool(IAzureMapsService azureMapsService, ILogger<RoutingTool
                 originPoints.Count, destinationPoints.Count);
 
             // Validate travel mode options
-            if (!TryParseTravelMode(travelMode, out var parsedTravelMode, out var tmError))
-                return JsonSerializer.Serialize(new { error = tmError });
+            var tmParsed = ToolsHelper.ParseTravelMode(travelMode);
+            if (!tmParsed.IsValid) return JsonSerializer.Serialize(new { error = tmParsed.Error });
+            var parsedTravelMode = tmParsed.Value;
 
             // Validate route type options
-            if (!TryParseRouteType(routeType, out var parsedRouteType, out var rtError))
-                return JsonSerializer.Serialize(new { error = rtError });
+            var rtParsed = ToolsHelper.ParseRouteType(routeType);
+            if (!rtParsed.IsValid) return JsonSerializer.Serialize(new { error = rtParsed.Error });
+            var parsedRouteType = rtParsed.Value;
 
             var matrixQuery = new RouteMatrixQuery
             {
@@ -427,15 +400,8 @@ public class RoutingTool(IAzureMapsService azureMapsService, ILogger<RoutingTool
     {
         try
         {
-            if (latitude < -90 || latitude > 90)
-            {
-                return JsonSerializer.Serialize(new { error = "Latitude must be between -90 and 90 degrees" });
-            }
-
-            if (longitude < -180 || longitude > 180)
-            {
-                return JsonSerializer.Serialize(new { error = "Longitude must be between -180 and 180 degrees" });
-            }
+            if (!ToolsHelper.TryCreateGeoPosition(latitude, longitude, out var centerPoint, out var coordError))
+                return JsonSerializer.Serialize(new { error = coordError });
 
             if (!timeBudgetInSeconds.HasValue && !distanceBudgetInMeters.HasValue)
             {
@@ -447,17 +413,17 @@ public class RoutingTool(IAzureMapsService azureMapsService, ILogger<RoutingTool
                 return JsonSerializer.Serialize(new { error = "Specify either timeBudgetInSeconds or distanceBudgetInMeters, not both" });
             }
 
-            var centerPoint = new GeoPosition(longitude, latitude);
-
             logger.LogInformation("Calculating route range from coordinates: {Latitude}, {Longitude}", latitude, longitude);
 
             // Validate travel mode options
-            if (!TryParseTravelMode(travelMode, out var parsedTravelMode, out var tmError))
-                return JsonSerializer.Serialize(new { error = tmError });
+            var tmParsed = ToolsHelper.ParseTravelMode(travelMode);
+            if (!tmParsed.IsValid) return JsonSerializer.Serialize(new { error = tmParsed.Error });
+            var parsedTravelMode = tmParsed.Value;
 
             // Validate route type options
-            if (!TryParseRouteType(routeType, out var parsedRouteType, out var rtError))
-                return JsonSerializer.Serialize(new { error = rtError });
+            var rtParsed = ToolsHelper.ParseRouteType(routeType);
+            if (!rtParsed.IsValid) return JsonSerializer.Serialize(new { error = rtParsed.Error });
+            var parsedRouteType = rtParsed.Value;
 
             var options = new RouteRangeOptions(centerPoint)
             {

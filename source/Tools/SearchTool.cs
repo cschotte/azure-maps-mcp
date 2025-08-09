@@ -120,43 +120,7 @@ public class SearchTool(IAzureMapsService azureMapsService, ILogger<SearchTool> 
         }
     }
 
-    /// <summary>
-    /// Calculate string similarity using simple character-based comparison
-    /// </summary>
-    private static double CalculateStringSimilarity(string str1, string str2)
-    {
-        if (string.IsNullOrEmpty(str1) || string.IsNullOrEmpty(str2)) return 0;
-        
-        var longer = str1.Length > str2.Length ? str1 : str2;
-        var shorter = str1.Length > str2.Length ? str2 : str1;
-        
-        if (longer.Length == 0) return 1.0;
-        
-        var editDistance = CalculateLevenshteinDistance(longer, shorter);
-        return (longer.Length - editDistance) / (double)longer.Length;
-    }
-
-    /// <summary>
-    /// Calculate Levenshtein distance between two strings
-    /// </summary>
-    private static int CalculateLevenshteinDistance(string s1, string s2)
-    {
-        var matrix = new int[s1.Length + 1, s2.Length + 1];
-
-        for (int i = 0; i <= s1.Length; i++) matrix[i, 0] = i;
-        for (int j = 0; j <= s2.Length; j++) matrix[0, j] = j;
-
-        for (int i = 1; i <= s1.Length; i++)
-        {
-            for (int j = 1; j <= s2.Length; j++)
-            {
-                var cost = s1[i - 1] == s2[j - 1] ? 0 : 1;
-                matrix[i, j] = Math.Min(Math.Min(matrix[i - 1, j] + 1, matrix[i, j - 1] + 1), matrix[i - 1, j - 1] + cost);
-            }
-        }
-
-        return matrix[s1.Length, s2.Length];
-    }
+    // string similarity and code conversion helpers moved to ToolsHelper
 
 
 
@@ -463,7 +427,7 @@ public class SearchTool(IAzureMapsService azureMapsService, ILogger<SearchTool> 
         // Handle 3-letter to 2-letter conversion for common cases
         if (trimmedCode.Length == 3)
         {
-            var converted = ConvertThreeLetterToTwoLetter(trimmedCode);
+            var converted = ToolsHelper.ConvertThreeLetterToTwoLetter(trimmedCode);
             if (converted != null)
             {
                 return (true, null, converted, null);
@@ -506,7 +470,7 @@ public class SearchTool(IAzureMapsService azureMapsService, ILogger<SearchTool> 
         if (countryCode.Length == 2)
         {
             // Try common variations for 2-letter codes
-            var variations = GenerateCodeVariations(countryCode);
+            var variations = ToolsHelper.GenerateCountryCodeVariations(countryCode);
             foreach (var variation in variations)
             {
                 country = _countryHelper.GetCountryByCode(variation);
@@ -533,21 +497,7 @@ public class SearchTool(IAzureMapsService azureMapsService, ILogger<SearchTool> 
     /// <summary>
     /// Generate alternative code variations for better matching
     /// </summary>
-    private static List<string> GenerateCodeVariations(string code)
-    {
-        var variations = new List<string>();
-        
-        // Try lowercase
-        variations.Add(code.ToLowerInvariant());
-        
-        // Try with different casing
-        if (code.Length == 2)
-        {
-            variations.Add(char.ToUpper(code[0]) + code[1..].ToLower());
-        }
-
-        return variations;
-    }
+    // code variation logic moved to ToolsHelper
 
     /// <summary>
     /// Builds comprehensive country response with enhanced data and insights
@@ -768,13 +718,13 @@ public class SearchTool(IAzureMapsService azureMapsService, ILogger<SearchTool> 
             
             // Find countries with similar codes
             var similarCodes = allCountries
-                .Where(c => CalculateStringSimilarity(c.CountryShortCode, invalidCode) > 0.5)
+                .Where(c => ToolsHelper.CalculateStringSimilarity(c.CountryShortCode, invalidCode) > 0.5)
                 .Take(5)
                 .Select(c => new
                 {
                     CountryCode = c.CountryShortCode,
                     CountryName = c.CountryName,
-                    Similarity = Math.Round(CalculateStringSimilarity(c.CountryShortCode, invalidCode) * 100, 1)
+                    Similarity = Math.Round(ToolsHelper.CalculateStringSimilarity(c.CountryShortCode, invalidCode) * 100, 1)
                 })
                 .Cast<object>()
                 .ToList();

@@ -96,8 +96,8 @@ public class RenderTool(IAzureMapsService azureMapsService)
     {
         try
         {
-            // Parse and validate bounding box
-            if (!TryParseBoundingBox(boundingBox, out var parsedBbox, out var bboxError))
+            // Parse and validate bounding box using shared helper
+            if (!ToolsHelper.TryParseBoundingBox(boundingBox, out var parsedBbox, out var bboxError))
                 return ResponseHelper.CreateErrorResponse(bboxError!);
             var geoBoundingBox = parsedBbox!;
 
@@ -192,29 +192,5 @@ public class RenderTool(IAzureMapsService azureMapsService)
         }
     }
 
-    private static bool TryParseBoundingBox(string json, out GeoBoundingBox? bbox, out string? error)
-    {
-        bbox = null;
-        error = null;
-        try
-        {
-            var dict = JsonSerializer.Deserialize<Dictionary<string, double>>(json);
-            if (dict == null || !dict.TryGetValue("west", out var west) ||
-                !dict.TryGetValue("south", out var south) ||
-                !dict.TryGetValue("east", out var east) ||
-                !dict.TryGetValue("north", out var north))
-            {
-                error = "Bounding box must contain 'west', 'south', 'east', and 'north' properties";
-                return false;
-            }
-
-            bbox = new GeoBoundingBox(west, south, east, north);
-            return true;
-        }
-        catch (JsonException)
-        {
-            error = "Invalid bounding box JSON format";
-            return false;
-        }
-    }
+    // bounding box parsing moved to ToolsHelper
 }
