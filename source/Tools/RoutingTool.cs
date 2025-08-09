@@ -43,32 +43,32 @@ public class RoutingTool(IAzureMapsService azureMapsService, ILogger<RoutingTool
     public async Task<string> GetRouteDirections(
         [McpToolTrigger(
             "routing_directions",
-            "🛣️ ROUTE PLANNER: Calculate optimized route directions between multiple points with real-time traffic integration. Perfect for trip planning, logistics optimization, and navigation applications. Supports multi-modal transportation with detailed turn-by-turn instructions, traffic-aware timing, and route geometry. Returns comprehensive route information including distance, time estimates, traffic delays, step-by-step directions, and route coordinates for mapping. BEST FOR: travel planning, delivery optimization, multi-stop tours, accessibility routing, logistics planning. FEATURES: Real-time traffic integration, route optimization, waypoint reordering, toll/highway avoidance options."
+            "Directions between 2+ points with traffic. Returns distance, ETA, geometry, and instructions."
         )] ToolInvocationContext context,
         [McpToolProperty(
             "coordinates",
             "array",
-            "📍 ROUTE POINTS: Array of coordinate objects for route calculation. MINIMUM: 2 points (origin, destination). FORMAT: [{latitude: number, longitude: number}, ...]. MULTIPLE POINTS: Add intermediate waypoints for complex routes with automatic optimization. EXAMPLE: [{latitude: 47.6062, longitude: -122.3321}, {latitude: 47.6205, longitude: -122.3493}]. TIP: More waypoints provide better route optimization and enhanced country detection for international travel."
+            "Array of {latitude,longitude}. Min 2 points. Example: [{latitude:47.6062,longitude:-122.3321},{latitude:47.6205,longitude:-122.3493}]."
         )] CoordinateInfo[] coordinates,
         [McpToolProperty(
             "travelMode",
             "string",
-            "🚗 TRANSPORTATION MODE: Vehicle/travel type for route optimization. OPTIONS: 'car' (default - fastest routes, traffic-optimized), 'truck' (respects weight/height restrictions, commercial routes), 'taxi' (passenger pickup optimized, urban routing), 'bus' (public transit compatible routes), 'van' (delivery optimized, moderate restrictions), 'motorcycle' (allows lane filtering, bike-accessible), 'bicycle' (bike lanes, cycling paths, elevation-aware), 'pedestrian' (walking paths, sidewalks, pedestrian areas). Each mode optimizes for specific vehicle constraints and road access permissions."
+            "car|truck|taxi|bus|van|motorcycle|bicycle|pedestrian (default car)"
         )] string travelMode = "car",
         [McpToolProperty(
             "routeType",
             "string",
-            "⚡ ROUTE OPTIMIZATION: Route calculation priority strategy. 'fastest' (default - time-optimized with real-time traffic data, recommended for most use cases), 'shortest' (distance-optimized, may take longer but uses less fuel, good for cost optimization). Choose 'fastest' for time-sensitive travel and deliveries, 'shortest' for fuel efficiency or simple distance-based routing."
+            "fastest|shortest (default fastest)"
         )] string routeType = "fastest",
         [McpToolProperty(
             "avoidTolls",
             "string",
-            "💰 TOLL AVOIDANCE: Avoid toll roads and bridges (boolean as string). 'true' = avoid all toll roads (may increase travel time but reduce costs), 'false' (default) = allow toll roads for optimal routing. Useful for cost-conscious routing or when traveling without toll payment methods."
+            "true|false (default false)"
         )] string avoidTolls = "false",
         [McpToolProperty(
             "avoidHighways",
             "string",
-            "🛣️ HIGHWAY AVOIDANCE: Avoid major highways and freeways (boolean as string). 'true' = use local roads and smaller highways (scenic routes, slower but more local access), 'false' (default) = allow all highway types for optimal speed. Useful for scenic routing, local business access, or when vehicle restrictions apply to major highways."
+            "true|false (default false)"
         )] string avoidHighways = "false"
     )
     {
@@ -413,23 +413,23 @@ public class RoutingTool(IAzureMapsService azureMapsService, ILogger<RoutingTool
         )] ToolInvocationContext context,
         [McpToolProperty(
             "latitude",
-            "string",
-            "number: -90..90"
+            "number",
+            "-90..90"
         )] double latitude,
         [McpToolProperty(
             "longitude",
-            "string",
-            "number: -180..180"
+            "number",
+            "-180..180"
         )] double longitude,
         [McpToolProperty(
             "timeBudgetInSeconds",
-            "string",
-            "integer seconds; use XOR with distanceBudgetInMeters"
+            "number",
+            "Integer seconds; XOR with distanceBudgetInMeters"
         )] int? timeBudgetInSeconds = null,
         [McpToolProperty(
             "distanceBudgetInMeters",
-            "string",
-            "integer meters; use XOR with timeBudgetInSeconds"
+            "number",
+            "Integer meters; XOR with timeBudgetInSeconds"
         )] int? distanceBudgetInMeters = null,
         [McpToolProperty(
             "travelMode",
@@ -524,12 +524,12 @@ public class RoutingTool(IAzureMapsService azureMapsService, ILogger<RoutingTool
     public async Task<string> AnalyzeRouteCountries(
         [McpToolTrigger(
             "routing_countries",
-            "Analyze a route and identify all countries that the route passes through. This is valuable for international travel planning, customs preparation, visa requirements analysis, and understanding cross-border logistics. Returns detailed country information for each country along the route path."
+            "Identify countries along a route defined by waypoints. Useful for cross-border checks."
         )] ToolInvocationContext context,
         [McpToolProperty(
             "coordinates",
             "array",
-            "Array of coordinate objects representing the route path. Must include at least 2 points (origin and destination). More points provide better country detection accuracy. Example: [{'latitude': 49.2827, 'longitude': -123.1207}, {'latitude': 47.6062, 'longitude': -122.3321}]"
+            "Array of {latitude,longitude}. Min 2 points."
         )] CoordinateInfo[] coordinates
     )
     {

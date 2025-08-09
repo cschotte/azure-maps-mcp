@@ -29,12 +29,12 @@ public class GeolocationTool(IAzureMapsService azureMapsService, ILogger<Geoloca
     public async Task<string> GetCountryCodeByIP(
         [McpToolTrigger(
             "geolocation_ip",
-            "🌐 IP LOCATION FINDER: Identify the country and geographic location of any public IP address (IPv4 or IPv6). Essential for user location detection, content localization, fraud prevention, and geographic analytics. Uses enterprise-grade IP geolocation databases with high accuracy for country-level identification. BEST FOR: user geographic segmentation, content personalization, security analysis, compliance checking, analytics. PRIVACY NOTE: Only works with public IP addresses, respects privacy by not processing private/internal network IPs."
+            "Country code lookup for a public IP (IPv4/IPv6). Returns ISO 3166-1 alpha-2. Example: 8.8.8.8 -> US. Private/loopback IPs are not supported."
         )] ToolInvocationContext context,
         [McpToolProperty(
             "ipAddress",
             "string",
-            "🔍 IP ADDRESS: Public IPv4 or IPv6 address to geolocate. FORMATS: IPv4 (e.g., '8.8.8.8', '1.2.3.4'), IPv6 (e.g., '2001:4860:4860::8888'). REQUIREMENTS: Must be a public internet IP address - private networks (192.168.x.x, 10.x.x.x, 172.16-31.x.x), loopback (127.x.x.x), and local addresses are not supported. EXAMPLES: '8.8.8.8' (Google DNS), '1.1.1.1' (Cloudflare DNS), '208.67.222.222' (OpenDNS)."
+            "Public IPv4/IPv6. Examples: 8.8.8.8, 1.1.1.1, 2001:4860:4860::8888. Private/loopback not supported."
         )] string ipAddress
     )
     {
@@ -180,12 +180,12 @@ public class GeolocationTool(IAzureMapsService azureMapsService, ILogger<Geoloca
     public async Task<string> GetCountryCodeBatch(
         [McpToolTrigger(
             "geolocation_ip_batch",
-            "Return ISO countries for up to 100 IPs in one call."
+            "Country codes for up to 100 IPs in one call. Returns ISO 3166-1 alpha-2."
         )] ToolInvocationContext context,
         [McpToolProperty(
             "ipAddresses",
             "array",
-            "Array of IPv4/IPv6 strings (max 100). Duplicates removed."
+            "Array of IPv4/IPv6 strings (max 100). Duplicates ignored."
         )] string[] ipAddresses
     )
     {
@@ -339,12 +339,12 @@ public class GeolocationTool(IAzureMapsService azureMapsService, ILogger<Geoloca
     public Task<string> ValidateIPAddress(
         [McpToolTrigger(
             "geolocation_ip_validate",
-            "Validate IP format and basic traits."
+            "Validate IPv4/IPv6 and basic traits (public/private, loopback)."
         )] ToolInvocationContext context,
         [McpToolProperty(
             "ipAddress",
             "string",
-            "IPv4/IPv6. Example: 8.8.8.8 or 2001:4898:80e8:b::189"
+            "IPv4/IPv6 string. Examples: 8.8.8.8, 2001:4898:80e8:b::189"
         )] string ipAddress
     )
     {

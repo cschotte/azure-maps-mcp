@@ -55,42 +55,42 @@ public class RenderTool(IAzureMapsService azureMapsService)
     public async Task<string> GetStaticMapImage(
         [McpToolTrigger(
             "render_staticmap",
-            "Render a static PNG map for a bbox with optional markers/paths."
+            "Static PNG map for a bbox with optional markers/paths. Returns data URI."
         )] ToolInvocationContext context,
         [McpToolProperty(
             "boundingBox",
             "string",
-            "JSON bbox: {west,south,east,north}."
+            "JSON bbox {west,south,east,north}. Example: {\"west\":-122.4,\"south\":47.5,\"east\":-122.2,\"north\":47.7}"
         )] string boundingBox = "{\"west\": -122.4, \"south\": 47.5, \"east\": -122.2, \"north\": 47.7}",
         [McpToolProperty(
             "zoomLevel",
             "number",
-            "Zoom 1-20."
+            "1..20 (default 10)"
         )] int zoomLevel = 10,
         [McpToolProperty(
             "width",
             "number",
-            "Width px 1-8192."
+            "1..8192 px (default 512)"
         )] int width = 512,
         [McpToolProperty(
             "height",
             "number",
-            "Height px 1-8192."
+            "1..8192 px (default 512)"
         )] int height = 512,
         [McpToolProperty(
             "mapStyle",
             "string",
-            "Style: road|satellite|hybrid."
+            "road|satellite|hybrid (default road)"
         )] string mapStyle = "road",
         [McpToolProperty(
             "markers",
             "array",
-            "Optional markers array."
+            "Optional MarkerInfo[]. Example: [{latitude:47.61,longitude:-122.33,label:'A'}]"
         )] MarkerInfo[]? markers = null,
         [McpToolProperty(
             "paths",
             "array", 
-            "Optional paths array."
+            "Optional PathInfo[]. Example: [{coordinates:[{latitude:47.61,longitude:-122.33},{latitude:47.62,longitude:-122.35}],width:3}]"
         )] PathInfo[]? paths = null
     )
     {

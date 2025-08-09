@@ -43,17 +43,17 @@ public class SearchTool(IAzureMapsService azureMapsService, ILogger<SearchTool> 
     public async Task<string> Geocoding(
         [McpToolTrigger(
             "search_geocoding",
-            "🎯 LOCATION FINDER: Convert any address, landmark, or place name into precise GPS coordinates. Essential for location-based queries, mapping applications, and geographic analysis. Use when users mention places that need to be mapped or when you need coordinates for routing/visualization. Supports worldwide locations including street addresses, cities, landmarks, businesses, airports, universities, and tourist attractions. Returns coordinates with confidence scores and detailed address components. BEST FOR: travel planning, business directories, address validation, location-based recommendations. OPTIMIZATION TIP: More specific addresses (with city/state/country) yield better results."
+            "Forward geocoding. Convert address/place to coordinates with confidence and components. Example: 'Eiffel Tower Paris' -> lat/lon."
         )] ToolInvocationContext context,
         [McpToolProperty(
             "address",
             "string",
-            "📍 LOCATION QUERY: The address, place name, or point of interest to find coordinates for. EXAMPLES: 'Eiffel Tower Paris', '123 Main Street Seattle WA', 'JFK Airport NYC', 'Tokyo Japan', 'Stanford University California'. QUALITY TIPS: Include city/state/country for best results, use official names for landmarks, add context for common names (e.g., 'Springfield Illinois' vs 'Springfield'). Supports worldwide coverage with local language support."
+            "Address or place text. Examples: '123 Main St Seattle WA', 'Eiffel Tower Paris', 'JFK Airport NYC'."
         )] string address,
         [McpToolProperty(
             "maxResults",
             "number",
-            "🔢 RESULT LIMIT: Maximum number of location matches to return (1-20, default: 5). USE CASES: 1 = single best match needed, 3-5 = typical queries with some ambiguity, 10-20 = highly ambiguous locations needing multiple options. Higher values provide more choices but may include less relevant results."
+            "1..20 (default 5). Higher values return more candidates."
         )] int maxResults = 5
     )
     {
@@ -214,17 +214,17 @@ public class SearchTool(IAzureMapsService azureMapsService, ILogger<SearchTool> 
     public async Task<string> ReverseGeocoding(
         [McpToolTrigger(
             "search_geocoding_reverse",
-            "🗺️ COORDINATE IDENTIFIER: Convert GPS coordinates (latitude, longitude) into detailed human-readable addresses and location information. Essential for processing location data from GPS devices, map clicks, user check-ins, or any coordinate pairs. Returns comprehensive address details, administrative boundaries, and location context. USE WHEN: you have latitude/longitude coordinates but need to know 'what place is this?' Perfect for GPS data processing, location identification, address completion, and geographic context discovery."
+            "Reverse geocoding. Convert coordinates to address and context."
         )] ToolInvocationContext context,
         [McpToolProperty(
             "latitude",
             "number",
-            "🌐 LATITUDE: Decimal degrees coordinate (-90 to 90). Positive values = North of equator, Negative values = South of equator. EXAMPLES: 47.6062 (Seattle, WA), 48.8566 (Paris, France), -33.8688 (Sydney, Australia). PRECISION: More decimal places = higher accuracy (6 decimals ≈ 0.1 meter precision)."
+            "-90..90. Example: 47.6062"
         )] double latitude,
         [McpToolProperty(
             "longitude",
             "number",
-            "🌐 LONGITUDE: Decimal degrees coordinate (-180 to 180). Positive values = East of Prime Meridian, Negative values = West of Prime Meridian. EXAMPLES: -122.3321 (Seattle, WA), 2.3522 (Paris, France), 151.2093 (Sydney, Australia). PRECISION: More decimal places = higher location accuracy."
+            "-180..180. Example: -122.3321"
         )] double longitude
     )
     {
@@ -368,27 +368,27 @@ public class SearchTool(IAzureMapsService azureMapsService, ILogger<SearchTool> 
     public async Task<string> GetPolygon(
         [McpToolTrigger(
             "search_polygon",
-            "Get admin boundary polygon at a point."
+            "Administrative boundary polygon at a point."
         )] ToolInvocationContext context,
         [McpToolProperty(
             "latitude",
-            "string",
-            "number: -90..90"
+            "number",
+            "-90..90"
         )] double latitude,
         [McpToolProperty(
             "longitude",
-            "string",
-            "number: -180..180"
+            "number",
+            "-180..180"
         )] double longitude,
         [McpToolProperty(
             "resultType",
             "string",
-            "Boundary type: locality|postalCode|adminDistrict|countryRegion"
+            "locality|postalCode|adminDistrict|countryRegion (default locality)"
         )] string resultType = "locality",
         [McpToolProperty(
             "resolution",
             "string",
-            "Polygon detail: small|medium|large"
+            "small|medium|large (default small)"
         )] string resolution = "small"
     )
     {
@@ -471,12 +471,12 @@ public class SearchTool(IAzureMapsService azureMapsService, ILogger<SearchTool> 
     public Task<string> GetCountryInfo(
         [McpToolTrigger(
             "search_country_info",
-            "Get country info by ISO code."
+            "Country info by ISO code."
         )] ToolInvocationContext context,
         [McpToolProperty(
             "countryCode",
             "string",
-            "ISO-3166 alpha-2 or alpha-3 (e.g., US or USA)"
+            "ISO 3166-1 alpha-2/alpha-3. Examples: US, USA, GB, GBR."
         )] string countryCode
     )
     {
@@ -920,11 +920,11 @@ public class SearchTool(IAzureMapsService azureMapsService, ILogger<SearchTool> 
         [McpToolProperty(
             "searchTerm",
             "string",
-            "Country name prefix/contains or code"
+            "Country name or code. Examples: 'Uni', 'US', 'DE'."
         )] string searchTerm,
         [McpToolProperty(
             "maxResults",
-            "string",
+            "number",
             "1..50 (default 10)"
         )] int maxResults = 10
     )
