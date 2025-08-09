@@ -1,37 +1,34 @@
 # 🗺️ Azure Maps MCP Server
 
-**Supercharge your AI applications with world-class geospatial intelligence!**
+Make any MCP-compatible AI agent location-aware with Azure Maps—search, routes, boundaries, IP geolocation, and static maps in one serverless package.
 
-A cutting-edge Model Context Protocol (MCP) server that bridges the gap between Large Language Models and enterprise-grade **Azure Maps** services. This serverless solution transforms any LLM into a powerful geospatial assistant capable of sophisticated geographic analysis, routing optimization, and location intelligence.
+This project implements a Model Context Protocol (MCP) server on Azure Functions (isolated worker, .NET 9). It exposes a compact, pragmatic set of tools that map directly to Azure Maps capabilities, so agents can geocode, analyze coordinates, compute routes/matrices/ranges, render images, validate IPs, and look up countries—securely and at scale.
 
 > [!IMPORTANT]
-> The **Azure Maps MCP Server** is currently in preview. You can expect changes prior to the MCP server becoming generally available.
-> You should avoid using this MCP server preview in production apps.
+> This MCP server is in preview. APIs, tool schemas, and behavior may change. Avoid production use.
 
-## 🚀 Why Choose Azure Maps MCP Server?
+## 🚀 Why choose this MCP server
 
-### **Enterprise-Grade Geospatial AI**
-Transform your AI applications with Microsoft's world-class mapping platform. Built on Azure's global infrastructure, this MCP server delivers the same geospatial intelligence that powers Microsoft products used by billions worldwide.
+### Built on Azure Maps
+Tap into Microsoft’s global mapping platform with modern SDKs for search, routing, rendering, and geolocation.
 
-### **Serverless & Scalable Architecture**
-Built on Azure Functions with automatic scaling, pay-per-use pricing, and zero infrastructure management. Deploy once and handle everything from prototype to production scale seamlessly.
+### Serverless and scalable
+Runs on Azure Functions with automatic scaling and pay-per-use economics. Zero infrastructure to manage.
 
-### **Rich Geospatial Capabilities**
-- 🎯 **Precision Geocoding**: Convert any address worldwide to coordinates with confidence scores
-- 🛣️ **Advanced Routing**: Multi-modal routing with real-time traffic and optimization
-- 🗺️ **Dynamic Map Generation**: Create publication-ready maps with custom styling
-- 🌍 **Global IP Intelligence**: Instant geolocation from IPv4/IPv6 addresses
-- 📊 **Comprehensive Country Data**: Deep demographic, economic, and cultural insights
-- 🔄 **Batch Operations**: Process thousands of locations efficiently
+### Focused capabilities
+- 🎯 Geocoding and reverse geocoding with optional admin boundaries
+- 🛣️ Directions, route matrices, reachable range (isochrones)
+- �️ Static map rendering with markers and paths
+- � IP geolocation and validation (IPv4/IPv6)
+- 🌎 Country lookup and lightweight country search
 
-### **Developer-First Experience**
-- ✅ **Plug-and-Play Integration**: Works with any MCP-compatible LLM client
-- ✅ **Comprehensive Documentation**: Detailed examples and use cases
-- ✅ **Type-Safe APIs**: Built with .NET 9.0 for robust, maintainable code
-- ✅ **Rich Error Handling**: Detailed diagnostics and logging
-- ✅ **Production Ready**: Microsoft-supported with enterprise SLA
+### Developer-first
+- ✅ Works with any MCP-compatible client
+- ✅ Small, well-documented tool surface
+- ✅ Strong typing and validation (.NET 9)
+- ✅ Clear errors with consistent JSON envelopes
 
-## 🎯 Perfect For
+## 🎯 Great for
 
 **🏢 Enterprise Applications**
 - Customer location services and store locators
@@ -51,118 +48,95 @@ Built on Azure Functions with automatic scaling, pay-per-use pricing, and zero i
 - Fleet management and route optimization
 - Geographic market analysis tools
 
-## 🔥 Technical Features & Capabilities
+## 🔥 Capabilities
 
-### 🗺️ Advanced Search & Geocoding
-**World-class address intelligence powered by Microsoft's global data**
-- **High-Precision Geocoding**: Convert any address format to coordinates with sub-meter accuracy
-- **Intelligent Reverse Geocoding**: Transform coordinates to human-readable addresses with cultural formatting
-- **Administrative Boundaries**: Access precise polygon data for cities, postal codes, states, and countries
-- **Global Country Intelligence**: 249 countries with demographics, economics, languages, and cultural data
-- **Smart Country Discovery**: AI-powered search by name, continent, or geographic criteria
-- **Confidence Scoring**: Quality metrics for every geocoding result to ensure reliability
+### 🗺️ Search & Geocoding
+- Forward geocoding with address components and confidence
+- Reverse geocoding with optional boundary geometry (locality, postal code, admin district, country)
 
-### 🛣️ Enterprise Routing & Optimization
-**Sophisticated routing engine for complex logistics scenarios**
-- **Multi-Modal Routing**: Optimized routes for cars, trucks, bicycles, pedestrians, and motorcycles
-- **Real-Time Traffic Integration**: Live traffic data for accurate travel time predictions
-- **Route Matrix Calculations**: Bulk distance/time calculations for up to 700 origins × destinations
-- **Isochrone Analysis**: Calculate service areas and accessibility zones with time/distance constraints
-- **International Route Analysis**: Automatic border crossing detection with country-specific insights
-- **Route Optimization**: Choose between fastest, shortest, or most fuel-efficient paths
-- **Waypoint Support**: Complex multi-stop routing with sequence optimization
+### 🛣️ Routing & analysis
+- Directions with traffic, leg summaries, and optional instruction text
+- Matrix (all-to-all) travel times/distances for provided points
+- Range analysis by time (minutes) or distance (km)
+- Route analysis for border crossings and country context
 
-### 🖼️ Dynamic Map Rendering
-**Publication-ready maps with enterprise customization**
-- **Static Map Generation**: High-resolution images perfect for reports and documentation
-- **Custom Markers & Overlays**: Brand-consistent visual elements with flexible styling
-- **Multiple Map Styles**: Road, satellite, hybrid views with global coverage
-- **Path Visualization**: Route overlays with customizable colors and weights
-- **Scalable Output**: From thumbnail previews to high-DPI poster prints
-- **Embedding Ready**: Direct integration into web apps, documents, and presentations
+### 🖼️ Static map rendering
+- PNG output as a data URI for easy embedding
+- Markers (labels) and polyline paths
+- Road, satellite, or hybrid styles
 
-### 🌐 Global IP Intelligence
-**Instant geolocation with enterprise-grade accuracy**
-- **Universal IP Support**: Both IPv4 and IPv6 with comprehensive coverage
-- **Batch Processing**: Analyze up to 100 IP addresses in a single optimized request
-- **Advanced Validation**: Technical IP analysis with scope detection and format validation
-- **Privacy Compliant**: Respectful of private network ranges and anonymization requirements
-- **Real-Time Processing**: Sub-second response times for interactive applications
-- **Global Coverage**: Worldwide IP geolocation database with regular updates
+### 🌐 IP geolocation
+- Single and batch country-code lookup
+- Format validation and private/loopback detection
 
-### ⚡ Performance & Reliability
-**Enterprise-grade infrastructure for mission-critical applications**
-- **Auto-Scaling**: Azure Functions automatically handle traffic spikes from 0 to millions of requests
-- **Global Edge Network**: Distributed processing with <100ms response times worldwide
-- **99.9% SLA**: Microsoft-backed availability guarantee with enterprise support
-- **Cost Optimization**: Pay-per-use pricing model scales with your business needs
-- **Security First**: OAuth2, managed identities, and VNet integration support
-- **Comprehensive Monitoring**: Built-in Application Insights with custom metrics and alerts
+### ⚡ Performance & reliability
+- Auto-scaling via Azure Functions (consumption or premium plans)
+- Pay-per-use model; free-tier options available for Azure Maps
+- Structured logging; Application Insights compatible
 
-## ⚙️ Supported Tools
+## ⚙️ MCP tools exposed
 
-Interact with these Azure Maps services through the following MCP tools:
+The tool catalog is registered as "Azure Maps Tool". These are the tool names and key parameters your MCP client will see:
 
-### 🔍 Search & Geocoding
+### 🔍 Location
+- location_find
+  - query (string, required)
+  - maxResults (number, 1–20, default 5)
+  - includeBoundaries ("true"|"false", default "false")
 
-**search_geocoding**: Convert street addresses, landmarks, or place names into precise geographic coordinates (latitude and longitude). Handles various address formats and returns detailed address components with confidence scores.
+- location_analyze
+  - latitude (number), longitude (number)
+  - boundaryType (locality|postalCode|adminDistrict|countryRegion, default locality)
+  - resolution (small|medium|large, default small)
 
-**search_geocoding_reverse**: Convert geographic coordinates into human-readable street addresses and location details. Essential for location-based applications displaying meaningful address information from GPS coordinates.
+### 🛣️ Navigation
+- navigation_calculate
+  - coordinates (LatLon[]; for range: 1 point; for directions/matrix: ≥2)
+  - calculationType (directions|matrix|range, default directions)
+  - travelMode (car|truck|taxi|bus|van|motorcycle|bicycle|pedestrian, default car)
+  - routeType (fastest|shortest, default fastest)
+  - timeBudgetMinutes (number, for range)
+  - distanceBudgetKm (number, for range)
+  - avoidTolls ("true"|"false")
+  - avoidHighways ("true"|"false")
 
-**search_polygon**: Retrieve administrative boundary polygons for geographic locations such as city limits, postal code areas, state/province boundaries, or country borders. Returns precise polygon coordinates for spatial analysis.
+- navigation_analyze
+  - coordinates (LatLon[]; ≥2)
 
-**search_country_info**: Get comprehensive country information including demographics, geography, economics, and cultural data by ISO country code. Returns languages, currencies, time zones, calling codes, and more.
+### 🖼️ Rendering
+- render_staticmap
+  - boundingBox (stringified JSON with west,south,east,north)
+  - zoomLevel (1–20)
+  - width,height (1–8192 px)
+  - mapStyle (road|satellite|hybrid)
+  - markers (array of { position:{latitude,longitude}, label?, color? })
+  - paths (array of { coordinates: LatLon[], width?, color? })
 
-**search_countries**: Find countries by name, continent, or other criteria. Helps discover countries matching specific geographic, cultural, or economic characteristics.
+### 🌐 Geolocation
+- geolocation_ip: ipAddress (string)
+- geolocation_ip_batch: ipAddresses (string[] up to 100)
+- geolocation_ip_validate: ipAddress (string)
 
-### 🛣️ Routing & Navigation
+### 🌎 Countries
+- search_country_info: countryCode (alpha-2 or alpha-3)
+- search_countries: searchTerm (string), maxResults (1–50)
 
-**routing_directions**: Calculate detailed driving/walking/cycling directions between geographic coordinates. Returns comprehensive route information including distance, travel time, turn-by-turn navigation, and route geometry.
-
-**routing_matrix**: Calculate travel times and distances between multiple origin and destination points in matrix format. Essential for delivery route planning, finding closest locations, and logistics optimization.
-
-**routing_range**: Calculate geographic areas reachable within specified time or distance limits from a starting point. Creates isochrone/isodistance polygons for service area analysis and accessibility studies.
-
-**routing_countries**: Analyze routes and identify all countries the route passes through. Valuable for international travel planning, customs preparation, and cross-border logistics.
-
-### 🖼️ Map Rendering
-
-**render_staticmap**: Generate custom static map images for specified geographic areas with optional markers and path overlays. Creates publication-ready map images perfect for reports, documentation, and presentations.
-
-### 🌐 Geolocation & IP Analysis
-
-**geolocation_ip**: Get country code and location information (ISO code, country name, continent) for a given IP address. Supports both IPv4 and IPv6 addresses.
-
-**geolocation_ip_batch**: Get country codes and location information for multiple IP addresses in a single request. Efficiently processes up to 100 IP addresses at once.
-
-**geolocation_ip_validate**: Validate IP address format and get comprehensive technical information. Returns validation status, address family, scope information, and technical details.
-
-## 🛠️ Getting Started in Minutes
+## 🛠️ Get started
 
 ### Prerequisites
-**Everything you need for modern serverless development:**
-- **[.NET 9.0 SDK](https://dotnet.microsoft.com/download/dotnet/9.0)** - Latest .NET with performance improvements and native AOT support
-- **[Azure Functions Core Tools](https://docs.microsoft.com/en-us/azure/azure-functions/functions-run-local)** - Local development and deployment tools (v4.x recommended)
-- **Azure Maps Subscription** - Enterprise mapping services (free tier available)
+Prerequisites
+- [.NET 9.0 SDK](https://dotnet.microsoft.com/download/dotnet/9.0)
+- [Azure Functions Core Tools v4](https://learn.microsoft.com/azure/azure-functions/functions-run-local)
+- Azure Maps subscription (free tier available)
 
 ### 🚀 Quick Setup
 
-#### 1. Get Your Azure Maps Subscription Key
+#### 1) Get your Azure Maps key
 
-**Option A: Free Tier (Perfect for Development)**
-1. Visit the [Azure Portal](https://portal.azure.com) and create a free account if needed
-2. Create a new **Azure Maps** resource in any region
-3. Select the **Gen2 (free)** pricing tier for 1M free transactions/month
-4. Navigate to **Authentication** → **Shared Key Authentication**
-5. Copy your **Primary Key** - this is your subscription key
+1. In the [Azure Portal](https://portal.azure.com), create an Azure Maps account (Gen2).
+2. Under Authentication, use Shared Key Authentication and copy the Primary Key.
 
-**Option B: Enterprise Tier (Production Ready)**
-- Unlimited transactions with pay-as-you-scale pricing
-- Advanced analytics and usage reporting
-- Priority support and SLA guarantees
-- Enterprise security and compliance features
-
-#### 2. Configure Your Development Environment
+#### 2) Configure local settings
 
 Create the `source/local.settings.json` file for local development:
 
@@ -171,9 +145,9 @@ Create the `source/local.settings.json` file for local development:
   "IsEncrypted": false,
   "Values": {
     "AzureWebJobsStorage": "None",
-    "AzureWebJobsSecretStorageType": "Files", 
+    "AzureWebJobsSecretStorageType": "Files",
     "FUNCTIONS_WORKER_RUNTIME": "dotnet-isolated",
-    "AZURE_MAPS_SUBSCRIPTION_KEY": "<<your-actual-key-here>>"
+    "AZURE_MAPS_SUBSCRIPTION_KEY": "<your-key>"
   }
 }
 ```
@@ -182,11 +156,11 @@ Create the `source/local.settings.json` file for local development:
 
 ⚠️ **Security Best Practice**: The `local.settings.json` file is automatically ignored by Git. Never commit secrets to version control!
 
-## 🔨 Building & Running
+## 🔨 Build and run
 
 ### Lightning-Fast Development Setup
 
-#### Using the Command Line
+#### Terminal
 ```bash
 # Clone and navigate to the project
 git clone https://github.com/cschotte/azure-maps-mcp.git
@@ -200,7 +174,7 @@ dotnet build
 func host start
 ```
 
-#### Using Visual Studio Code (Recommended)
+#### Visual Studio Code
 1. **Open the project**: `File` → `Open Folder` → Select `azure-maps-mcp`
 2. **Install recommended extensions**: VS Code will prompt you automatically
 3. **Build**: `Ctrl+Shift+P` → `Tasks: Run Task` → `build (functions)`
@@ -208,47 +182,49 @@ func host start
 
 The server starts in seconds and automatically watches for code changes with hot reload!
 
-### 🚀 Running Your MCP Server
+### 🚀 Run the MCP server
 
 #### Development Mode (Hot Reload Enabled)
 ```bash
-# Option 1: Azure Functions Core Tools (Recommended)
-cd source
-dotnet build
-cd bin/Debug/net9.0
+# Azure Functions Core Tools (recommended)
+cd source && dotnet build && cd bin/Debug/net9.0
 func host start
-
-# Option 2: Direct .NET execution
-cd source
-dotnet run
 ```
 
 **Your server will be running at:**
 - 🌐 HTTP: `http://localhost:7071` (Azure Functions default)
 - 🔒 HTTPS: `https://localhost:7174` (VS Code launch profile)
 
-#### VS Code Integration
+#### VS Code integration
 - **Quick Start**: Press `F5` for instant debugging with breakpoints
 - **Task Runner**: `Ctrl+Shift+P` → `Tasks: Run Task` → `func: host start`
 - **Integrated Terminal**: Built-in terminal with auto-completion and IntelliSense
 
-### 🌍 Production Deployment
+### 🌍 Deploy to Azure
 
 #### Deploy to Azure Functions (Serverless)
+Optional commands you can adapt for your environment:
+
 ```bash
 # Build for production
 dotnet publish --configuration Release
 
-# Deploy using Azure CLI (one-time setup)
-az login
-az functionapp create --resource-group myResourceGroup \
-                     --consumption-plan-location westus \
-                     --runtime dotnet-isolated \
-                     --functions-version 4 \
-                     --name my-azure-maps-mcp
+# Create a Function App (consumption plan) and set settings
+# Note: replace the placeholders to match your subscription/environment
+az functionapp create \
+  --resource-group <rg> \
+  --consumption-plan-location <region> \
+  --runtime dotnet-isolated \
+  --functions-version 4 \
+  --name <app-name>
+
+az functionapp config appsettings set \
+  --resource-group <rg> \
+  --name <app-name> \
+  --settings AZURE_MAPS_SUBSCRIPTION_KEY=<your-key>
 
 # Deploy your code
-func azure functionapp publish my-azure-maps-mcp
+func azure functionapp publish <app-name>
 ```
 
 #### Alternative: Deploy using Azure DevOps or GitHub Actions
@@ -257,13 +233,11 @@ func azure functionapp publish my-azure-maps-mcp
 - **Secret Management**: Secure handling of API keys and connection strings
 - **Monitoring**: Built-in Application Insights and custom dashboards
 
-**Production Benefits:**
-- ⚡ **Global Scale**: Auto-scaling across Azure's worldwide regions
-- 💰 **Cost Effective**: Pay only for actual usage (free tier: 1M requests/month)
-- 🔒 **Enterprise Security**: VNet integration, managed identities, private endpoints
-- 📊 **Rich Monitoring**: Real-time metrics, alerts, and performance insights
+Notes
+- Configure monitoring with Application Insights for production environments.
+- Store secrets in App Settings or Azure Key Vault; avoid committing secrets.
 
-## 🏗️ Architecture & Project Structure
+## 🏗️ Architecture & project structure
 
 ### Clean Architecture Design
 Built following Microsoft's recommended patterns for maintainable, testable, and scalable serverless applications:
@@ -281,10 +255,12 @@ azure-maps-mcp/
 │   │   └── 📄 AzureMapsService.cs      # Azure Maps SDK implementation
 │   │
 │   └── 📁 Tools/                        # MCP tool implementations
-│       ├── 📄 SearchTool.cs            # 🔍 Geocoding & country intelligence
-│       ├── 📄 RoutingTool.cs           # 🛣️ Route planning & optimization
-│       ├── 📄 RenderTool.cs            # 🖼️ Map generation & visualization
-│       └── 📄 GeolocationTool.cs       # 🌐 IP geolocation & validation
+│       ├── 📄 BaseMapsTool.cs          # Shared validation/response helpers
+│       ├── 📄 LocationTool.cs          # 🔍 Geocoding, reverse geocoding, boundaries
+│       ├── 📄 NavigationTool.cs        # 🛣️ Directions, matrix, range, analysis
+│       ├── 📄 RenderTool.cs            # 🖼️ Static map generation
+│       ├── 📄 GeolocationTool.cs       # 🌐 IP geolocation & validation
+│       └── 📄 CountryTool.cs           # 🌎 Country info & search
 │
 ├── 📄 README.md                         # This comprehensive guide
 └── 📄 LICENSE                           # MIT license for commercial use
@@ -292,80 +268,56 @@ azure-maps-mcp/
 
 ### Key Design Principles
 
-**🎯 Separation of Concerns**
+**Separation of concerns**
 - **Tools Layer**: MCP protocol handling and input validation
 - **Services Layer**: Business logic and Azure Maps SDK integration  
 - **Clean Interfaces**: Dependency injection for testability and flexibility
 
-**⚡ Performance Optimized**
+**Performance oriented**
 - **Async/Await**: Non-blocking I/O throughout the application
 - **Memory Efficient**: Minimal allocations with streaming where possible
 - **Cached Connections**: Reusable HTTP clients for optimal throughput
 
-**🔒 Security by Design**
+**Security by design**
 - **Input Validation**: Comprehensive parameter sanitization
 - **Secret Management**: Environment-based configuration
 - **Error Handling**: Secure error messages without information leakage
 
-## 📦 Dependencies & Technology Stack
+## 📦 Dependencies & stack
 
-### Core Azure Maps SDKs
-**Latest preview versions with cutting-edge features:**
-- **[Azure.Maps.Search](https://www.nuget.org/packages/Azure.Maps.Search)** `2.0.0-beta.5` - Geocoding, reverse geocoding, administrative boundaries
-- **[Azure.Maps.Routing](https://www.nuget.org/packages/Azure.Maps.Routing)** `1.0.0-beta.4` - Multi-modal routing, traffic-aware navigation
-- **[Azure.Maps.Rendering](https://www.nuget.org/packages/Azure.Maps.Rendering)** `1.0.0-beta.4` - Static map generation, custom styling
-- **[Azure.Maps.Geolocation](https://www.nuget.org/packages/Azure.Maps.Geolocation)** `1.0.0-beta.3` - IP-to-location intelligence
+### Azure Maps SDKs (as used here)
+- Azure.Maps.Search `2.0.0-beta.5`
+- Azure.Maps.Routing `1.0.0-beta.4`
+- Azure.Maps.Rendering `2.0.0-beta.1`
+- Azure.Maps.Geolocation `1.0.0-beta.3`
 
-### Microsoft Azure Functions Stack
-**Production-ready serverless platform:**
-- **[Microsoft.Azure.Functions.Worker](https://www.nuget.org/packages/Microsoft.Azure.Functions.Worker)** `2.0.0` - Isolated process model for performance
-- **[Microsoft.Azure.Functions.Worker.Extensions.Mcp](https://www.nuget.org/packages/Microsoft.Azure.Functions.Worker.Extensions.Mcp)** `1.0.0-preview.6` - Native MCP protocol support
+### Azure Functions stack
+- Microsoft.Azure.Functions.Worker `2.0.0` (isolated)
+- Microsoft.Azure.Functions.Worker.Extensions.Mcp `1.0.0-preview.6`
 
-### Additional Libraries
-**Carefully selected for functionality and performance:**
-- **[CountryData.Standard](https://www.nuget.org/packages/CountryData.Standard)** `1.5.0` - Comprehensive country database (249 countries)
-- **.NET 9.0** - Latest runtime with Native AOT support and performance improvements
+### Additional libraries
+- CountryData.Standard `1.5.0`
+- .NET 9.0
 
-### Why These Technologies?
+### Why this stack
+- Strong typing and modern SDKs
+- Cross-platform local dev on macOS, Linux, and Windows
+- Simple to deploy and scale with Azure Functions
 
-**🚀 Performance Benefits**
-- **.NET 9.0**: Up to 20% performance improvement over .NET 8
-- **Isolated Worker Process**: Better memory management and faster cold starts
-- **Native AOT Ready**: Sub-second startup times for production workloads
-
-**🔧 Developer Experience**
-- **Type Safety**: Full IntelliSense and compile-time error checking
-- **Rich Ecosystem**: Extensive NuGet packages and community support
-- **Cross-Platform**: Develop on Windows, macOS, or Linux
-
-**🏢 Enterprise Ready**
-- **Microsoft Support**: Official Microsoft SDKs with enterprise SLA
-- **Security**: Regular security updates and vulnerability patches
-- **Compliance**: SOC, ISO, and GDPR compliant infrastructure
-
-## ⚙️ Configuration & Customization
+## ⚙️ Configuration
 
 ### Environment Variables
-**Required Configuration:**
-- `AZURE_MAPS_SUBSCRIPTION_KEY` - Your Azure Maps API key (required for all operations)
+Required
+- `AZURE_MAPS_SUBSCRIPTION_KEY` – your Azure Maps key
 
-**Optional Configuration:**
-- `AZURE_MAPS_CLIENT_ID` - For Azure AD authentication (enterprise scenarios)
-- `FUNCTIONS_WORKER_RUNTIME` - Set to `dotnet-isolated` (default)
-- `AzureWebJobsStorage` - Set to `"None"` for local development
+Optional
+- `FUNCTIONS_WORKER_RUNTIME` – defaults to `dotnet-isolated`
+- `AzureWebJobsStorage` – set to `"None"` for local dev
 
-### Azure Functions Host Settings
-**Performance Tuning in `host.json`:**
+### Azure Functions host settings (host.json)
 ```json
 {
   "version": "2.0",
-  "functionTimeout": "00:05:00",
-  "extensions": {
-    "http": {
-      "routePrefix": "",
-      "maxConcurrentRequests": 100
-    }
-  },
   "logging": {
     "applicationInsights": {
       "samplingSettings": {
@@ -382,38 +334,38 @@ azure-maps-mcp/
 - **Caching**: Add Redis cache for frequently requested data
 - **Monitoring**: Application Insights integration for performance tracking
 
-## 🔧 Troubleshooting & Best Practices
+## 🔧 Troubleshooting
 
 ### Common Setup Issues
 
-**❌ "Subscription key is invalid"**
+"Subscription key is invalid"
 - ✅ Verify your key in the Azure Portal under Azure Maps → Authentication
 - ✅ Check that the key is correctly set in `local.settings.json`
 - ✅ Ensure no extra spaces or quotation marks around the key
 
-**❌ "Build failed - SDK not found"**
+"Build failed – SDK not found"
 - ✅ Install .NET 9.0 SDK from [Microsoft's official site](https://dotnet.microsoft.com/download/dotnet/9.0)
 - ✅ Run `dotnet --version` to verify installation
 - ✅ Clear NuGet cache: `dotnet nuget locals all --clear`
 
-**❌ "Function host won't start"**
+"Function host won't start"
 - ✅ Update Azure Functions Core Tools: `npm install -g azure-functions-core-tools@4`
 - ✅ Check port availability (7071, 7174)
 - ✅ Verify `local.settings.json` format with a JSON validator
 
 ### Performance Optimization Tips
 
-**🚀 Speed Improvements**
+Performance tips
 - Use batch operations (e.g., `geolocation_ip_batch`) for multiple requests
 - Implement client-side caching for frequently accessed country data
 - Consider Azure Front Door for global distribution
 
-**💰 Cost Optimization**
+Cost tips
 - Monitor usage in Azure Portal to stay within free tier limits
 - Cache static map images to avoid regeneration
 - Use route matrix efficiently for bulk calculations
 
-### Production Deployment Checklist
+### Production checklist
 
 - [ ] **Security**: API keys stored in Azure Key Vault or app settings
 - [ ] **Monitoring**: Application Insights configured with custom metrics
@@ -422,32 +374,15 @@ azure-maps-mcp/
 - [ ] **Backup**: Source code in version control with automated deployments
 - [ ] **Testing**: Load testing completed for expected traffic volumes
 
-### Getting Help
+## 📚 Resources
 
-**📚 Documentation & Resources**
 - [Azure Maps Documentation](https://docs.microsoft.com/azure/azure-maps/) - Comprehensive API guides
 - [Model Context Protocol Specification](https://spec.modelcontextprotocol.io/) - MCP protocol details
 - [Azure Functions Best Practices](https://docs.microsoft.com/azure/azure-functions/functions-best-practices) - Performance optimization
 
-**🆘 Support Channels**
-- **GitHub Issues**: Bug reports and feature requests on this repository
-- **Azure Support**: Enterprise support plans with SLA guarantees
-- **Community**: Stack Overflow with tags `azure-maps` and `azure-functions`
-- **Microsoft Q&A**: Official Microsoft community support platform
-
-## Microsoft Open Source
-
-This project has adopted the [Microsoft Open Source Code of Conduct](https://opensource.microsoft.com/codeofconduct/).
-For more information see the [Code of Conduct FAQ](https://opensource.microsoft.com/codeofconduct/faq/) or
-contact [opencode@microsoft.com](mailto:opencode@microsoft.com) with any additional questions or comments.
-
-## Support
-
-This project is supported by Microsoft. For support and questions:
-
-- Create an issue in this repository for bugs and feature requests
-- For general questions about Azure Maps, visit [Azure Maps Documentation](https://docs.microsoft.com/azure/azure-maps/)
-- For commercial support, contact [Azure Support](https://azure.microsoft.com/support/)
+## 🆘 Support
+- Use GitHub Issues for bugs and feature requests
+- For Azure Maps questions, see the docs and community resources linked above
 
 ## Contributing
 
@@ -460,13 +395,7 @@ a CLA and decorate the PR appropriately (e.g., status check, comment). Simply fo
 provided by the bot. You will only need to do this once across all repos using our CLA.
 
 This project has adopted the [Microsoft Open Source Code of Conduct](https://opensource.microsoft.com/codeofconduct/).
-For more information see the [Code of Conduct FAQ](https://opensource.microsoft.com/codeofconduct/faq/) or
-contact [opencode@microsoft.com](mailto:opencode@microsoft.com) with any additional questions or comments.
+For more information see the [Code of Conduct FAQ](https://opensource.microsoft.com/codeofconduct/faq/) or contact [opencode@microsoft.com](mailto:opencode@microsoft.com).
 
 ## Trademarks
-
-This project may contain trademarks or logos for projects, products, or services. Authorized use of Microsoft 
-trademarks or logos is subject to and must follow 
-[Microsoft's Trademark & Brand Guidelines](https://www.microsoft.com/en-us/legal/intellectualproperty/trademarks/usage/general).
-Use of Microsoft trademarks or logos in modified versions of this project must not cause confusion or imply Microsoft sponsorship.
-Any use of third-party trademarks or logos are subject to those third-party's policies.
+This project may contain trademarks or logos for projects, products, or services. Authorized use of Microsoft trademarks or logos is subject to and must follow [Microsoft's Trademark & Brand Guidelines](https://www.microsoft.com/en-us/legal/intellectualproperty/trademarks/usage/general). Use of Microsoft trademarks or logos in modified versions of this project must not cause confusion or imply Microsoft sponsorship. Any use of third-party trademarks or logos are subject to those third-party's policies.

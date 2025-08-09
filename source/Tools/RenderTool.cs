@@ -12,16 +12,7 @@ using Azure.Maps.Mcp.Common.Models;
 
 namespace Azure.Maps.Mcp.Tools;
 
-/// <summary>
-/// Represents a marker to be placed on the map
-/// </summary>
 public record Marker(LatLon Position, string? Label = null, string? Color = null);
-
-// Replaced by Common.Models.LatLon
-
-/// <summary>
-/// Represents a path to be drawn on the map
-/// </summary>
 public record PathInfo(LatLon[]? Coordinates, string? Color = null, int Width = 3);
 
 /// <summary>
@@ -104,7 +95,7 @@ public class RenderTool(IAzureMapsService azureMapsService)
             var pushpinStyles = new List<ImagePushpinStyle>();
             var pathStyles = new List<ImagePathStyle>();
 
-            // Process markers if provided
+        // Process markers if provided
         if (markers?.Length > 0)
             {
                 var pushpinPositions = markers
@@ -174,6 +165,4 @@ public class RenderTool(IAzureMapsService azureMapsService)
             return ResponseHelper.CreateErrorResponse("Failed to generate static map image");
         }
     }
-
-    // bounding box parsing moved to ToolsHelper
 }
