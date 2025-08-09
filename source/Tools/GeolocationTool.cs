@@ -67,99 +67,17 @@ public class GeolocationTool(IAzureMapsService azureMapsService, ILogger<Geoloca
             
             if (country != null)
             {
-                var aiOptimizedResult = new
+                logger.LogInformation("Country for IP resolved: {Code}", country.CountryShortCode);
+                return ResponseHelper.CreateSuccessResponse(new
                 {
-                    success = true,
-                    tool = "geolocation_ip",
-                    timestamp = DateTime.UtcNow.ToString("O"),
-                    query = new
-                    {
-                        ipAddress = ipAddress,
-                        ipType = parsedIP.AddressFamily.ToString(),
-                        isPublic = !ValidationHelper.IsPrivateIP(parsedIP) && !IPAddress.IsLoopback(parsedIP)
-                    },
-                    location = new
-                    {
-                        country = new
-                        {
-                            code = country.CountryShortCode,
-                            name = country.CountryName
-                        },
-                        geographicContext = new
-                        {
-                            dataSource = "Azure Maps IP Geolocation Database",
-                            accuracy = "Country-level identification"
-                        }
-                    },
-                    aiContext = new
-                    {
-                        toolCategory = "IP_ANALYSIS",
-                        nextSuggestedActions = new[]
-                        {
-                            "Use country information for content localization",
-                            "Apply region-specific business logic",
-                            "Consider timezone for scheduling and notifications",
-                            "Use for geographic analytics and user segmentation"
-                        },
-                        usageHints = new[]
-                        {
-                            "IP geolocation provides country-level accuracy",
-                            "Not suitable for precise location tracking",
-                            "Respects user privacy by not tracking exact location",
-                            "Best for regional content delivery and compliance"
-                        },
-                        qualityIndicators = new
-                        {
-                            accuracy = "Country-level (high confidence)",
-                            dataSource = "Azure Maps IP Geolocation",
-                            privacyCompliant = true
-                        }
-                    }
-                };
-                
-                logger.LogInformation("Successfully retrieved country: {CountryCode} for IP: {IPAddress}", 
-                    country.CountryShortCode, ipAddress);
-                
-                return JsonSerializer.Serialize(aiOptimizedResult, new JsonSerializerOptions { WriteIndented = false });
+                    query = new { ipAddress, ipType = parsedIP.AddressFamily.ToString(), isPublic = true },
+                    country = new { code = country.CountryShortCode, name = country.CountryName }
+                });
             }
         }
 
         // No results found
-        var noResultsResponse = new
-        {
-            success = false,
-            tool = "geolocation_ip",
-            timestamp = DateTime.UtcNow.ToString("O"),
-            error = new
-            {
-                type = "NO_RESULTS",
-                message = "No country data available for this IP address",
-                ipAddress = ipAddress,
-                recovery = new
-                {
-                    immediateActions = new[]
-                    {
-                        "Verify the IP address is correct and public",
-                        "Check if IP is from a known public range",
-                        "Try with a different public IP address"
-                    },
-                    commonCauses = new[]
-                    {
-                        "IP address not in geolocation database",
-                        "Recently allocated IP ranges", 
-                        "Special purpose IP addresses (satellite, military)"
-                    },
-                    alternatives = new[]
-                    {
-                        "Use batch IP geolocation for multiple addresses",
-                        "Validate IP format first",
-                        "Consider fallback to user-provided location"
-                    }
-                }
-            }
-        };
-        
-        return JsonSerializer.Serialize(noResultsResponse, new JsonSerializerOptions { WriteIndented = false });
+    return ResponseHelper.CreateErrorResponse("No country data available for this IP address", new { ipAddress });
         }
         catch (RequestFailedException ex)
         {

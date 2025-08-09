@@ -142,122 +142,33 @@ public class RoutingTool(IAzureMapsService azureMapsService, ILogger<RoutingTool
                     turnAngleDegrees = i.TurnAngleInDegrees
                 }).ToList();
 
-                var aiOptimizedResult = new
+                var result = new
                 {
-                    success = true,
-                    tool = "routing_directions",
-                    timestamp = DateTime.UtcNow.ToString("O"),
-                    route = new
+                    summary = new
                     {
-                        summary = new
-                        {
-                            distanceMeters = dist_m,
-                            distanceKilometers = dist_m.HasValue ? Math.Round(dist_m.Value / 1000.0, 2) : (double?)null,
-                            travelTimeSeconds = time_s,
-                            travelTimeDuration = time_s.HasValue ? TimeSpan.FromSeconds(time_s.Value).ToString(@"hh\:mm\:ss") : null,
-                            trafficDelaySeconds = route.Summary.TravelTimeDuration?.TotalSeconds
-                        },
-                        geometry = route.Legs?.SelectMany(leg => leg.Points ?? new List<GeoPosition>())
-                            .Select(p => new { latitude = p.Latitude, longitude = p.Longitude }).ToList(),
-                        legs = legs,
-                        instructions = instructions,
-                        quality = new
-                        {
-                            routeOptimization = parsedRouteType.ToString(),
-                            trafficData = "Real-time traffic included",
-                            accuracy = "High-precision routing"
-                        }
+                        distanceMeters = dist_m,
+                        travelTimeSeconds = time_s,
+                        trafficDelaySeconds = route.Summary.TravelTimeDuration?.TotalSeconds
                     },
-                    aiContext = new
-                    {
-                        toolCategory = "NAVIGATION",
-                        nextSuggestedActions = new[]
-                        {
-                            "Use geometry coordinates for map visualization",
-                            "Process instructions for turn-by-turn navigation",
-                            "Monitor traffic delays for real-time updates",
-                            "Consider alternative routes if delays are significant"
-                        },
-                        usageHints = new[]
-                        {
-                            $"Route optimized for {parsedTravelMode.ToString().ToLower()} travel",
-                            $"Estimated travel time includes current traffic conditions",
-                            "Coordinates provided in WGS84 decimal degrees format"
-                        }
-                    }
+                    geometry = route.Legs?.SelectMany(leg => leg.Points ?? new List<GeoPosition>())
+                        .Select(p => new { latitude = p.Latitude, longitude = p.Longitude }).ToList(),
+                    legs,
+                    instructions
                 };
 
-                logger.LogInformation("Route ok: {Km}km, {Time}",
-                    dist_m.HasValue ? Math.Round(dist_m.Value / 1000.0, 2) : null,
-                    time_s.HasValue ? TimeSpan.FromSeconds(time_s.Value).ToString(@"hh\:mm\:ss") : null);
-
-                return JsonSerializer.Serialize(aiOptimizedResult, new JsonSerializerOptions { WriteIndented = false });
+                logger.LogInformation("Route ok");
+                return ResponseHelper.CreateSuccessResponse(result);
             }
 
             // No route found
-            var noRouteResponse = new
-            {
-                success = false,
-                tool = "routing_directions",
-                timestamp = DateTime.UtcNow.ToString("O"),
-                error = new
-                {
-                    type = "NO_ROUTE",
-                    message = "No route found between the specified coordinates",
-                    coordinates = coordinates.Select(c => new { c.Latitude, c.Longitude }).ToArray(),
-                    recovery = new
-                    {
-                        immediateActions = new[]
-                        {
-                            "Verify all coordinates are accessible by the selected travel mode",
-                            "Check if coordinates are in restricted or inaccessible areas",
-                            "Try alternative travel modes (e.g., pedestrian if car routing fails)",
-                            "Ensure coordinates are not separated by impassable barriers"
-                        },
-                        commonCauses = new[]
-                        {
-                            "Coordinates in different road networks (e.g., islands)",
-                            "Restricted areas or private roads for selected travel mode",
-                            "Coordinates over water without ferry connections",
-                            "Travel mode restrictions (e.g., truck routing on car-only roads)"
-                        },
-                        alternatives = new[]
-                        {
-                            "Try different travel mode (pedestrian, bicycle, car)",
-                            "Use route matrix to check connectivity between points",
-                            "Validate coordinates with reverse geocoding first"
-                        }
-                    }
-                }
-            };
-
             logger.LogWarning("No route found between the specified coordinates");
-            return JsonSerializer.Serialize(noRouteResponse, new JsonSerializerOptions { WriteIndented = false });
+            return ResponseHelper.CreateErrorResponse("No route found between the specified coordinates");
         }
         catch (RequestFailedException ex)
         {
             logger.LogError(ex, "Azure Maps API error during route calculation: {Message}", ex.Message);
             
-            var errorResponse = new
-            {
-                success = false,
-                tool = "routing_directions",
-                timestamp = DateTime.UtcNow.ToString("O"),
-                error = new
-                {
-                    type = "API_ERROR",
-                    message = $"Azure Maps routing service error: {ex.Message}",
-                    coordinates = coordinates.Select(c => new { c.Latitude, c.Longitude }).ToArray(),
-                    recovery = new
-                    {
-                        immediateActions = new[] { "Retry the request", "Check coordinate validity", "Verify service status" },
-                        commonCauses = new[] { "Temporary service issue", "Invalid coordinates", "Rate limiting" },
-                        examples = "Wait a moment and retry, or check Azure Maps service health"
-                    }
-                }
-            };
-            
-            return JsonSerializer.Serialize(errorResponse, new JsonSerializerOptions { WriteIndented = false });
+            return ResponseHelper.CreateErrorResponse("Azure Maps routing service error", new { ex.Message });
         }
         catch (Exception ex)
         {
@@ -393,12 +304,12 @@ public class RoutingTool(IAzureMapsService azureMapsService, ILogger<RoutingTool
         catch (RequestFailedException ex)
         {
             logger.LogError(ex, "Azure Maps API error during route matrix calculation: {Message}", ex.Message);
-            return JsonSerializer.Serialize(new { error = $"API Error: {ex.Message}" });
+            return ResponseHelper.CreateErrorResponse($"API Error: {ex.Message}");
         }
         catch (Exception ex)
         {
             logger.LogError(ex, "Unexpected error during route matrix calculation");
-            return JsonSerializer.Serialize(new { error = "An unexpected error occurred" });
+            return ResponseHelper.CreateErrorResponse("An unexpected error occurred");
         }
     }
 

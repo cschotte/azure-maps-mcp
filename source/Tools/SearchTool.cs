@@ -10,7 +10,6 @@ using Azure.Maps.Mcp.Services;
 using Azure.Maps.Mcp.Common;
 using Azure.Core.GeoJson;
 using System.Text.Json;
-using CountryData.Standard;
 
 namespace Azure.Maps.Mcp.Tools;
 
@@ -20,7 +19,6 @@ namespace Azure.Maps.Mcp.Tools;
 public class SearchTool(IAzureMapsService azureMapsService, ILogger<SearchTool> logger)
 {
     private readonly MapsSearchClient _searchClient = azureMapsService.SearchClient;
-    private readonly CountryHelper _countryHelper = new();
     private static readonly Dictionary<string, BoundaryResultTypeEnum> ResultTypes = new(StringComparer.OrdinalIgnoreCase)
     {
         { "locality", BoundaryResultTypeEnum.Locality },
@@ -37,7 +35,7 @@ public class SearchTool(IAzureMapsService azureMapsService, ILogger<SearchTool> 
     };
 
     /// <summary>
-    /// Converts an address or place name to geographic coordinates with enhanced AI-friendly features
+    /// Forward geocoding: address/place -> coordinates
     /// </summary>
     [Function(nameof(Geocoding))]
     public async Task<string> Geocoding(
@@ -75,14 +73,10 @@ public class SearchTool(IAzureMapsService azureMapsService, ILogger<SearchTool> 
 
             if (response.Value?.Features != null && response.Value.Features.Any())
             {
-                var items = response.Value.Features.Select(f => new
+                var locations = response.Value.Features.Select(f => new
                 {
                     address = f.Properties.Address?.FormattedAddress,
-                    coordinates = new 
-                    {
-                        latitude = f.Geometry.Coordinates[1],
-                        longitude = f.Geometry.Coordinates[0]
-                    },
+                    coordinates = new { latitude = f.Geometry.Coordinates[1], longitude = f.Geometry.Coordinates[0] },
                     components = new
                     {
                         streetNumber = f.Properties.Address?.StreetNumber,
@@ -92,120 +86,25 @@ public class SearchTool(IAzureMapsService azureMapsService, ILogger<SearchTool> 
                         country = f.Properties.Address?.CountryRegion?.Name,
                         countryCode = f.Properties.Address?.CountryRegion?.Iso
                     },
-                    confidence = f.Properties.Confidence.ToString(),
-                    locationType = DetermineLocationType(f.Properties.Address),
-                    qualityScore = CalculateQualityScore(f.Properties.Confidence, f.Properties.Address?.FormattedAddress),
-                    usageHints = GenerateLocationUsageHints(f.Geometry.Coordinates[1], f.Geometry.Coordinates[0])
+                    confidence = f.Properties.Confidence.ToString()
                 }).ToList();
 
-                var aiOptimizedResult = new 
-                { 
-                    success = true,
-                    tool = "search_geocoding",
-                    timestamp = DateTime.UtcNow.ToString("O"),
-                    query = new
-                    {
-                        original = normalizedAddress,
-                        normalized = normalizedAddress,
-                        quality = AnalyzeQueryQuality(normalizedAddress)
-                    },
-                    summary = new
-                    {
-                        totalResults = items.Count,
-                        bestConfidence = items.Any() ? items.Max(i => ParseConfidence(i.confidence ?? "low")) : 0.0,
-                        qualityRating = items.Count > 0 ? "EXCELLENT" : "NO_RESULTS"
-                    },
-                    locations = items,
-                    aiContext = new
-                    {
-                        toolCategory = "LOCATION_SEARCH",
-                        nextSuggestedActions = new[]
-                        {
-                            "Use coordinates for routing or map visualization",
-                            "Validate address components for data quality",
-                            "Consider reverse geocoding for context verification"
-                        },
-                        optimizationTips = GenerateOptimizationTips(normalizedAddress, items.Count)
-                    }
-                };
-
-                logger.LogInformation("Geocode ok: {Count} results", items.Count);
-                return JsonSerializer.Serialize(aiOptimizedResult, new JsonSerializerOptions { WriteIndented = false });
+                logger.LogInformation("Geocode ok: {Count} results", locations.Count);
+                return ResponseHelper.CreateSuccessResponse(new { query = normalizedAddress, results = locations });
             }
 
             // No results found - AI-optimized error response
-            var noResultsResponse = new
-            {
-                success = false,
-                tool = "search_geocoding",
-                timestamp = DateTime.UtcNow.ToString("O"),
-                error = new
-                {
-                    type = "NO_RESULTS",
-                    message = $"No locations found for '{normalizedAddress}'",
-                    query = normalizedAddress,
-                    recovery = new
-                    {
-                        immediateActions = new[] 
-                        { 
-                            "Try adding city, state, or country context",
-                            "Check spelling and formatting",
-                            "Use more specific location identifiers"
-                        },
-                        commonCauses = new[] 
-                        { 
-                            "Location doesn't exist or is not indexed",
-                            "Query too vague or ambiguous", 
-                            "Spelling errors in place names"
-                        },
-                        examples = new[]
-                        {
-                            "Instead of 'main street' try 'Main Street, Seattle, WA'",
-                            "Instead of 'paris' try 'Paris, France' or 'Paris, Texas'",
-                            "Use landmarks: 'Eiffel Tower' or postal codes"
-                        }
-                    },
-                    alternatives = new[]
-                    {
-                        "Try reverse geocoding if you have coordinates",
-                        "Use polygon search for administrative boundaries", 
-                        "Search for nearby landmarks or major cities first"
-                    }
-                }
-            };
-            
-            return JsonSerializer.Serialize(noResultsResponse, new JsonSerializerOptions { WriteIndented = false });
+            return ResponseHelper.CreateErrorResponse($"No locations found for '{normalizedAddress}'");
         }
         catch (Exception ex)
         {
             logger.LogError(ex, "Error during geocoding for address: {Address}", address);
             
-            var errorResponse = new
-            {
-                success = false,
-                tool = "search_geocoding",
-                timestamp = DateTime.UtcNow.ToString("O"),
-                error = new
-                {
-                    type = "API_ERROR",
-                    message = "Geocoding service encountered an error",
-                    query = address,
-                    recovery = new
-                    {
-                        immediateActions = new[] { "Retry the request", "Check service status", "Verify input parameters" },
-                        commonCauses = new[] { "Temporary service issue", "Network connectivity", "Invalid parameters" },
-                        examples = "Wait a moment and retry, or check Azure Maps service health"
-                    }
-                }
-            };
-            
-            return JsonSerializer.Serialize(errorResponse, new JsonSerializerOptions { WriteIndented = false });
+            return ResponseHelper.CreateErrorResponse("Geocoding service error", new { ex.Message, address });
         }
     }
 
-    // string similarity and code conversion helpers moved to ToolsHelper
-
-
+    // string similarity and code conversion helpers centralized in ToolsHelper
 
     /// <summary>
     /// Converts geographic coordinates back to a human-readable address (reverse geocoding)
@@ -244,120 +143,36 @@ public class SearchTool(IAzureMapsService azureMapsService, ILogger<SearchTool> 
             {
                 var f = response.Value.Features.First();
                 var address = f.Properties.Address;
-                
-                var aiOptimizedResult = new
+                var result = new
                 {
-                    success = true,
-                    tool = "search_geocoding_reverse",
-                    timestamp = DateTime.UtcNow.ToString("O"),
-                    query = new
+                    address = new
                     {
-                        coordinates = new { latitude, longitude },
-                        precision = ResponseHelper.DeterminePrecisionLevel(latitude, longitude)
-                    },
-                    location = new
-                    {
-                        address = new
+                        formatted = address?.FormattedAddress,
+                        components = new
                         {
-                            formatted = address?.FormattedAddress,
-                            components = new
-                            {
-                                streetNumber = address?.StreetNumber,
-                                streetName = address?.StreetName,
-                                locality = address?.Locality,
-                                postalCode = address?.PostalCode,
-                                country = address?.CountryRegion?.Name,
-                                countryCode = address?.CountryRegion?.Iso
-                            }
-                        },
-                        coordinates = new { latitude, longitude },
-                        locationType = DetermineLocationType(address),
-                        geographicContext = DetermineGeographicContext(latitude, longitude),
-                        usageHints = GenerateLocationUsageHints(latitude, longitude)
-                    },
-                    aiContext = new
-                    {
-                        toolCategory = "LOCATION_SEARCH",
-                        nextSuggestedActions = new[]
-                        {
-                            "Use address for display or storage",
-                            "Combine with geocoding for validation",
-                            "Extract components for structured data"
-                        },
-                        qualityIndicators = new
-                        {
-                            addressCompleteness = CalculateAddressCompleteness(address),
-                            dataSource = "Azure Maps",
-                            accuracy = "High-precision reverse geocoding"
+                            streetNumber = address?.StreetNumber,
+                            streetName = address?.StreetName,
+                            locality = address?.Locality,
+                            postalCode = address?.PostalCode,
+                            country = address?.CountryRegion?.Name,
+                            countryCode = address?.CountryRegion?.Iso
                         }
-                    }
+                    },
+                    coordinates = new { latitude, longitude }
                 };
 
                 logger.LogInformation("Reverse geocode ok");
-                return JsonSerializer.Serialize(aiOptimizedResult, new JsonSerializerOptions { WriteIndented = false });
+                return ResponseHelper.CreateSuccessResponse(result);
             }
 
             // No results found
-            var noResultsResponse = new
-            {
-                success = false,
-                tool = "search_geocoding_reverse",
-                timestamp = DateTime.UtcNow.ToString("O"),
-                error = new
-                {
-                    type = "NO_RESULTS",
-                    message = $"No address found for coordinates ({latitude}, {longitude})",
-                    coordinates = new { latitude, longitude },
-                    recovery = new
-                    {
-                        immediateActions = new[] 
-                        { 
-                            "Verify coordinates are valid and in populated areas",
-                            "Try nearby coordinates with slight adjustments",
-                            "Check if coordinates are over water or remote areas"
-                        },
-                        commonCauses = new[] 
-                        { 
-                            "Coordinates in unpopulated or remote areas",
-                            "Coordinates over water bodies",
-                            "Very precise coordinates with no nearby addresses"
-                        },
-                        alternatives = new[]
-                        {
-                            "Use forward geocoding to validate locations",
-                            "Try polygon search for administrative boundaries",
-                            "Check if coordinates need different precision level"
-                        }
-                    }
-                }
-            };
-            
-            return JsonSerializer.Serialize(noResultsResponse, new JsonSerializerOptions { WriteIndented = false });
+            return ResponseHelper.CreateErrorResponse($"No address found for coordinates ({latitude}, {longitude})");
         }
         catch (Exception ex)
         {
             logger.LogError(ex, "Error during reverse geocoding");
             
-            var errorResponse = new
-            {
-                success = false,
-                tool = "search_geocoding_reverse", 
-                timestamp = DateTime.UtcNow.ToString("O"),
-                error = new
-                {
-                    type = "API_ERROR",
-                    message = "Reverse geocoding service encountered an error",
-                    coordinates = new { latitude, longitude },
-                    recovery = new
-                    {
-                        immediateActions = new[] { "Retry the request", "Verify coordinate format", "Check service status" },
-                        commonCauses = new[] { "Temporary service issue", "Invalid coordinate format", "Network connectivity" },
-                        examples = "Ensure coordinates are in decimal degrees format (e.g., 47.6062, -122.3321)"
-                    }
-                }
-            };
-            
-            return JsonSerializer.Serialize(errorResponse, new JsonSerializerOptions { WriteIndented = false });
+            return ResponseHelper.CreateErrorResponse("Reverse geocoding service error", new { ex.Message, latitude, longitude });
         }
     }
     
@@ -444,695 +259,32 @@ public class SearchTool(IAzureMapsService azureMapsService, ILogger<SearchTool> 
                     cr = response.Value.Properties?.Copyright
                 };
 
-                var result = new { meta, n = geoms.Count, geoms };
+                var result = new { meta, count = geoms.Count, geometries = geoms };
                 logger.LogInformation("Boundary ok: {Count}", geoms.Count);
-                return JsonSerializer.Serialize(new { ok = true, result }, new JsonSerializerOptions { WriteIndented = false });
+                return ResponseHelper.CreateSuccessResponse(result);
             }
 
             logger.LogWarning("No boundary polygon found for coordinates: {Latitude}, {Longitude}", latitude, longitude);
-            return JsonSerializer.Serialize(new { success = false, message = "No boundary polygon found for these coordinates" });
+            return ResponseHelper.CreateErrorResponse("No boundary polygon found for these coordinates");
         }
         catch (RequestFailedException ex)
         {
             logger.LogError(ex, "Azure Maps API error during polygon retrieval: {Message}", ex.Message);
-            return JsonSerializer.Serialize(new { error = $"API Error: {ex.Message}" });
+            return ResponseHelper.CreateErrorResponse($"API Error: {ex.Message}");
         }
         catch (Exception ex)
         {
             logger.LogError(ex, "Unexpected error during polygon retrieval");
-            return JsonSerializer.Serialize(new { error = "An unexpected error occurred" });
+            return ResponseHelper.CreateErrorResponse("An unexpected error occurred");
         }
     }
 
+    // Country endpoints moved to CountryTool to reduce file size and complexity
     /// <summary>
-    /// Get comprehensive country information by ISO country code with enhanced data and insights
+    /// Country-specific helpers removed
     /// </summary>
-    [Function(nameof(GetCountryInfo))]
-    public Task<string> GetCountryInfo(
-        [McpToolTrigger(
-            "search_country_info",
-            "Country info by ISO code."
-        )] ToolInvocationContext context,
-        [McpToolProperty(
-            "countryCode",
-            "string",
-            "ISO 3166-1 alpha-2/alpha-3. Examples: US, USA, GB, GBR."
-        )] string countryCode
-    )
-    {
-        var startTime = DateTime.UtcNow;
 
-        try
-        {
-            // Enhanced input validation with intelligent normalization
-            var validationResult = ValidateAndNormalizeCountryCode(countryCode);
-            if (!validationResult.IsValid)
-            {
-                return Task.FromResult(JsonSerializer.Serialize(new { 
-                    error = validationResult.ErrorMessage,
-                    inputReceived = countryCode,
-                    suggestions = validationResult.Suggestions,
-                    timestamp = startTime
-                }));
-            }
-
-            var normalizedCode = validationResult.NormalizedCode!;
-            logger.LogInformation("Getting enhanced country information for code: {CountryCode}", normalizedCode);
-
-            // Attempt to get country data with fallback strategies
-            var countryResult = GetCountryWithFallback(normalizedCode);
-            var endTime = DateTime.UtcNow;
-
-            if (countryResult.Country != null)
-            {
-                // Build comprehensive response with enhanced country data
-                var response = BuildEnhancedCountryResponse(countryResult.Country, normalizedCode, 
-                    countryResult.MatchMethod, startTime, endTime);
-
-                logger.LogInformation("Successfully retrieved enhanced country information for: {CountryName} using {Method} in {Duration}ms", 
-                    countryResult.Country.CountryName, countryResult.MatchMethod, (endTime - startTime).TotalMilliseconds);
-
-                return Task.FromResult(JsonSerializer.Serialize(new { 
-                    ok = true, 
-                    country = countryResult.Country,
-                    data = response
-                }, new JsonSerializerOptions { WriteIndented = false }));
-            }
-
-            // Enhanced error response with helpful suggestions
-            var errorResponse = BuildCountryNotFoundResponse(normalizedCode, countryCode, startTime, endTime);
-            logger.LogWarning("No country data found for code: {CountryCode}", normalizedCode);
-
-            return Task.FromResult(JsonSerializer.Serialize(new { ok = false, error = errorResponse }));
-        }
-        catch (Exception ex)
-        {
-            var endTime = DateTime.UtcNow;
-            logger.LogError(ex, "Unexpected error during country lookup for code: {CountryCode}", countryCode);
-            return Task.FromResult(JsonSerializer.Serialize(new { 
-                ok = false,
-                err = "unexpected",
-                msg = ex.Message,
-                input = countryCode,
-                ms = (endTime - startTime).TotalMilliseconds,
-                ts = startTime
-            }));
-        }
-    }
-
-    /// <summary>
-    /// Validates and normalizes country code input with intelligent suggestions
-    /// </summary>
-    private static (bool IsValid, string? ErrorMessage, string? NormalizedCode, List<string>? Suggestions) ValidateAndNormalizeCountryCode(string? countryCode)
-    {
-        if (string.IsNullOrWhiteSpace(countryCode))
-        {
-            return (false, "Country code is required and cannot be empty", null, new List<string>
-            {
-                "Provide a 2-letter ISO code like 'US', 'GB', 'DE'",
-                "Use 3-letter codes like 'USA', 'GBR', 'DEU'",
-                "Ensure the code is not empty or whitespace"
-            });
-        }
-
-        var trimmedCode = countryCode.Trim().ToUpperInvariant();
-
-        // Validate length and format
-        if (trimmedCode.Length < 2 || trimmedCode.Length > 3)
-        {
-            return (false, $"Country code '{countryCode}' must be 2 or 3 letters long", null, new List<string>
-            {
-                "Use 2-letter ISO 3166-1 alpha-2 codes (e.g., 'US', 'CA', 'GB')",
-                "Use 3-letter ISO 3166-1 alpha-3 codes (e.g., 'USA', 'CAN', 'GBR')",
-                "Check for typos in the country code"
-            });
-        }
-
-        // Validate that it contains only letters
-        if (!trimmedCode.All(char.IsLetter))
-        {
-            return (false, $"Country code '{countryCode}' must contain only letters", null, new List<string>
-            {
-                "Remove any numbers, spaces, or special characters",
-                "Use only alphabetic characters (A-Z)",
-                "Examples of valid codes: 'US', 'DE', 'JP', 'USA', 'DEU', 'JPN'"
-            });
-        }
-
-        // Handle 3-letter to 2-letter conversion for common cases
-        if (trimmedCode.Length == 3)
-        {
-            var converted = ToolsHelper.ConvertThreeLetterToTwoLetter(trimmedCode);
-            if (converted != null)
-            {
-                return (true, null, converted, null);
-            }
-        }
-
-        return (true, null, trimmedCode, null);
-    }
-
-    /// <summary>
-    /// Convert common 3-letter country codes to 2-letter equivalents
-    /// </summary>
-    private static string? ConvertThreeLetterToTwoLetter(string threeLetterCode)
-    {
-        var conversionMap = new Dictionary<string, string>
-        {
-            ["USA"] = "US", ["CAN"] = "CA", ["GBR"] = "GB", ["DEU"] = "DE", ["FRA"] = "FR",
-            ["JPN"] = "JP", ["AUS"] = "AU", ["CHN"] = "CN", ["IND"] = "IN", ["BRA"] = "BR",
-            ["RUS"] = "RU", ["ITA"] = "IT", ["ESP"] = "ES", ["MEX"] = "MX", ["KOR"] = "KR",
-            ["NLD"] = "NL", ["BEL"] = "BE", ["CHE"] = "CH", ["AUT"] = "AT", ["SWE"] = "SE",
-            ["NOR"] = "NO", ["DNK"] = "DK", ["FIN"] = "FI", ["POL"] = "PL", ["TUR"] = "TR"
-        };
-
-        return conversionMap.TryGetValue(threeLetterCode, out var twoLetterCode) ? twoLetterCode : null;
-    }
-
-    /// <summary>
-    /// Attempts to get country data with multiple fallback strategies
-    /// </summary>
-    private (Country? Country, string MatchMethod) GetCountryWithFallback(string countryCode)
-    {
-        // Primary attempt: Direct code lookup
-        var country = _countryHelper.GetCountryByCode(countryCode);
-        if (country != null)
-        {
-            return (country, "Direct Code Match");
-        }
-
-        // Fallback 1: Try alternative code formats
-        if (countryCode.Length == 2)
-        {
-            // Try common variations for 2-letter codes
-            var variations = ToolsHelper.GenerateCountryCodeVariations(countryCode);
-            foreach (var variation in variations)
-            {
-                country = _countryHelper.GetCountryByCode(variation);
-                if (country != null)
-                {
-                    return (country, $"Alternative Format ({variation})");
-                }
-            }
-        }
-
-        // Fallback 2: Fuzzy search through all countries
-        var allCountries = _countryHelper.GetCountryData();
-        foreach (var c in allCountries)
-        {
-            if (c.CountryShortCode.Equals(countryCode, StringComparison.OrdinalIgnoreCase))
-            {
-                return (c, "Case-Insensitive Match");
-            }
-        }
-
-        return (null, "No Match Found");
-    }
-
-    /// <summary>
-    /// Generate alternative code variations for better matching
-    /// </summary>
-    // code variation logic moved to ToolsHelper
-
-    /// <summary>
-    /// Builds comprehensive country response with enhanced data and insights
-    /// </summary>
-    private object BuildEnhancedCountryResponse(Country country, string requestedCode, string matchMethod, DateTime startTime, DateTime endTime)
-    {
-        return new
-        {
-            CountryInfo = new
-            {
-                Country = country,
-                RequestedCode = requestedCode,
-                ActualCode = country.CountryShortCode,
-                MatchMethod = matchMethod,
-                DataSource = "CountryData.Standard Library"
-            },
-            Enhancement = new
-            {
-                ProcessingTime = new
-                {
-                    ProcessingTimeMs = (int)(endTime - startTime).TotalMilliseconds,
-                    StartTime = startTime,
-                    EndTime = endTime
-                },
-                DataQuality = new
-                {
-                    Confidence = "High",
-                    DataCompleteness = CalculateCountryDataCompleteness(country),
-                    LastValidated = "Library Maintained",
-                    ReliabilityScore = CalculateReliabilityScore(matchMethod)
-                }
-            },
-            RelatedData = new
-            {
-                RegionalContext = GetRegionalContext(country),
-                SimilarCountries = FindSimilarCountries(country),
-                UsageGuidance = GenerateCountryUsageGuidance(country, matchMethod)
-            },
-            TechnicalInfo = new
-            {
-                CodeValidation = new
-                {
-                    InputCode = requestedCode,
-                    NormalizedCode = country.CountryShortCode,
-                    IsExactMatch = requestedCode.Equals(country.CountryShortCode, StringComparison.OrdinalIgnoreCase),
-                    AlternativeCodes = GetAlternativeCountryCodes(country)
-                }
-            }
-        };
-    }
-
-    /// <summary>
-    /// Calculate data completeness percentage for country information
-    /// </summary>
-    private static int CalculateCountryDataCompleteness(Country country)
-    {
-        var fields = new object?[]
-        {
-            country.CountryName,
-            country.CountryShortCode,
-            // Add other available properties as needed
-        };
-
-        var populatedFields = fields.Count(f => f != null && !string.IsNullOrWhiteSpace(f.ToString()));
-        return (populatedFields * 100) / fields.Length;
-    }
-
-    /// <summary>
-    /// Calculate reliability score based on match method
-    /// </summary>
-    private static int CalculateReliabilityScore(string matchMethod)
-    {
-        return matchMethod switch
-        {
-            "Direct Code Match" => 100,
-            "Case-Insensitive Match" => 95,
-            var method when method.StartsWith("Alternative Format") => 90,
-            _ => 80
-        };
-    }
-
-    /// <summary>
-    /// Get regional context for the country
-    /// </summary>
-    private object GetRegionalContext(Country country)
-    {
-        // This is a simplified example - could be enhanced with actual regional data
-        return new
-        {
-            Note = "Regional context would be available with enhanced geographic data",
-            CountryCode = country.CountryShortCode,
-            CountryName = country.CountryName
-        };
-    }
-
-    /// <summary>
-    /// Find countries with similar characteristics
-    /// </summary>
-    private List<object> FindSimilarCountries(Country targetCountry)
-    {
-        try
-        {
-            var allCountries = _countryHelper.GetCountryData();
-            
-            // Find countries with similar names or characteristics
-            var similarCountries = allCountries
-                .Where(c => c.CountryShortCode != targetCountry.CountryShortCode)
-                .Where(c => c.CountryName.Contains(' ') == targetCountry.CountryName.Contains(' ') ||
-                           Math.Abs(c.CountryName.Length - targetCountry.CountryName.Length) <= 3)
-                .Take(3)
-                .Select(c => new
-                {
-                    CountryCode = c.CountryShortCode,
-                    CountryName = c.CountryName,
-                    SimilarityReason = "Name characteristics"
-                })
-                .ToList<object>();
-
-            return similarCountries;
-        }
-        catch
-        {
-            return new List<object>();
-        }
-    }
-
-    /// <summary>
-    /// Generate usage guidance based on country and match method
-    /// </summary>
-    private static List<string> GenerateCountryUsageGuidance(Country country, string matchMethod)
-    {
-        var guidance = new List<string>();
-
-        if (matchMethod == "Direct Code Match")
-        {
-            guidance.Add("Perfect match found - use this data with high confidence");
-        }
-        else
-        {
-            guidance.Add($"Country found using {matchMethod} - verify if this matches your intended country");
-        }
-
-        guidance.Add("Use the CountryShortCode for standardized references");
-        guidance.Add("Cache this country data for improved performance in repeated lookups");
-        
-        if (country.CountryName.Contains("United"))
-        {
-            guidance.Add("Note: This country name contains 'United' - ensure correct country selection");
-        }
-
-        return guidance;
-    }
-
-    /// <summary>
-    /// Get alternative country codes and formats
-    /// </summary>
-    private static object GetAlternativeCountryCodes(Country country)
-    {
-        return new
-        {
-            ISO_Alpha2 = country.CountryShortCode,
-            CommonVariations = new[]
-            {
-                country.CountryShortCode.ToLowerInvariant(),
-                country.CountryShortCode.ToUpperInvariant()
-            },
-            Note = "Additional ISO-3166 codes would be available with enhanced country data provider"
-        };
-    }
-
-    /// <summary>
-    /// Build comprehensive error response for country not found
-    /// </summary>
-    private object BuildCountryNotFoundResponse(string normalizedCode, string originalInput, DateTime startTime, DateTime endTime)
-    {
-        var suggestions = GenerateCountryCodeSuggestions(normalizedCode);
-        
-        return new
-        {
-            success = false,
-            message = $"No country data found for code '{normalizedCode}'",
-            searchDetails = new
-            {
-                InputReceived = originalInput,
-                NormalizedCode = normalizedCode,
-                ProcessingTime = (endTime - startTime).TotalMilliseconds,
-                SearchMethod = "Comprehensive lookup with fallbacks"
-            },
-            suggestions = suggestions,
-            troubleshooting = new
-            {
-                CommonIssues = new[]
-                {
-                    "Verify the country code spelling",
-                    "Ensure using standard ISO 3166-1 codes",
-                    "Check if using obsolete or non-standard codes"
-                },
-                ExampleValidCodes = new[]
-                {
-                    "US (United States)", "CA (Canada)", "GB (United Kingdom)",
-                    "DE (Germany)", "FR (France)", "JP (Japan)", "AU (Australia)"
-                }
-            },
-            timestamp = startTime
-        };
-    }
-
-    /// <summary>
-    /// Generate intelligent suggestions for invalid country codes
-    /// </summary>
-    private List<object> GenerateCountryCodeSuggestions(string invalidCode)
-    {
-        var suggestions = new List<object>();
-
-        try
-        {
-            var allCountries = _countryHelper.GetCountryData();
-            
-            // Find countries with similar codes
-            var similarCodes = allCountries
-                .Where(c => ToolsHelper.CalculateStringSimilarity(c.CountryShortCode, invalidCode) > 0.5)
-                .Take(5)
-                .Select(c => new
-                {
-                    CountryCode = c.CountryShortCode,
-                    CountryName = c.CountryName,
-                    Similarity = Math.Round(ToolsHelper.CalculateStringSimilarity(c.CountryShortCode, invalidCode) * 100, 1)
-                })
-                .Cast<object>()
-                .ToList();
-
-            if (similarCodes.Any())
-            {
-                suggestions.AddRange(similarCodes);
-            }
-            else
-            {
-                // Provide common country codes as fallback
-                suggestions.AddRange(new object[]
-                {
-                    new { CountryCode = "US", CountryName = "United States", Note = "Most common code" },
-                    new { CountryCode = "GB", CountryName = "United Kingdom", Note = "Common European code" },
-                    new { CountryCode = "DE", CountryName = "Germany", Note = "Common European code" }
-                });
-            }
-        }
-        catch
-        {
-            // Fallback suggestions if country data access fails
-            suggestions.Add(new { Note = "Unable to generate specific suggestions - verify country code format" });
-        }
-
-        return suggestions;
-    }
-
-    /// <summary>
-    /// Find countries by various criteria like name, continent, or region
-    /// </summary>
-    [Function(nameof(FindCountries))]
-    public Task<string> FindCountries(
-        [McpToolTrigger(
-            "search_countries",
-            "Search countries by name/code with scoring."
-        )] ToolInvocationContext context,
-        [McpToolProperty(
-            "searchTerm",
-            "string",
-            "Country name or code. Examples: 'Uni', 'US', 'DE'."
-        )] string searchTerm,
-        [McpToolProperty(
-            "maxResults",
-            "number",
-            "1..50 (default 10)"
-        )] int maxResults = 10
-    )
-    {
-        try
-        {
-            // Validate input
-            var validationError = ValidateSearchInput(searchTerm, ref maxResults);
-            if (validationError != null)
-            {
-                return Task.FromResult(JsonSerializer.Serialize(new { error = validationError }));
-            }
-
-            logger.LogInformation("Searching for countries with term: '{SearchTerm}'", searchTerm);
-
-            var allCountries = _countryHelper.GetCountryData();
-            var searchResults = SearchCountriesWithScoring(allCountries, searchTerm, maxResults);
-
-            var result = BuildSearchResult(searchTerm, searchResults, maxResults, allCountries.Count());
-
-            logger.LogInformation("Found {Count} countries matching '{SearchTerm}'", searchResults.Count, searchTerm);
-            return Task.FromResult(JsonSerializer.Serialize(new { ok = true, result }, new JsonSerializerOptions { WriteIndented = false }));
-        }
-        catch (Exception ex)
-        {
-            logger.LogError(ex, "Unexpected error during country search");
-            return Task.FromResult(JsonSerializer.Serialize(new { ok = false, err = "unexpected" }));
-        }
-    }
-
-    /// <summary>
-    /// Validate search input parameters
-    /// </summary>
-    private static string? ValidateSearchInput(string? searchTerm, ref int maxResults)
-    {
-        if (string.IsNullOrWhiteSpace(searchTerm))
-        {
-            return "Search term is required";
-        }
-
-        if (searchTerm.Trim().Length < 2)
-        {
-            return "Search term must be at least 2 characters long";
-        }
-
-        maxResults = Math.Max(1, Math.Min(50, maxResults));
-        return null;
-    }
-
-    /// <summary>
-    /// Search countries with intelligent scoring and ranking
-    /// </summary>
-    private static List<(Country Country, int Score, string MatchType)> SearchCountriesWithScoring(
-        IEnumerable<Country> countries, string searchTerm, int maxResults)
-    {
-        var normalizedSearchTerm = searchTerm.Trim();
-        
-        var scoredResults = countries
-            .Select(country => 
-            {
-                var (score, matchType) = CalculateCountryMatchScore(country, normalizedSearchTerm);
-                return (Country: country, Score: score, MatchType: matchType);
-            })
-            .Where(result => result.Score > 0)
-            .OrderByDescending(result => result.Score)
-            .ThenBy(result => result.Country.CountryName)
-            .Take(maxResults)
-            .ToList();
-
-        return scoredResults;
-    }
-
-    /// <summary>
-    /// Calculate match score for a country based on search criteria
-    /// </summary>
-    private static (int Score, string MatchType) CalculateCountryMatchScore(Country country, string searchTerm)
-    {
-        const int ExactCodeMatch = 100;
-        const int ExactNameMatch = 90;
-        const int StartsWithMatch = 80;
-        const int ContainsMatch = 60;
-        const int PartialMatch = 40;
-
-        var comparison = StringComparison.OrdinalIgnoreCase;
-
-        // Exact country code match (highest priority)
-        if (country.CountryShortCode.Equals(searchTerm, comparison))
-        {
-            return (ExactCodeMatch, "Exact Code Match");
-        }
-
-        // Exact country name match
-        if (country.CountryName.Equals(searchTerm, comparison))
-        {
-            return (ExactNameMatch, "Exact Name Match");
-        }
-
-        // Country name starts with search term
-        if (country.CountryName.StartsWith(searchTerm, comparison))
-        {
-            return (StartsWithMatch, "Name Prefix Match");
-        }
-
-        // Country name contains search term
-        if (country.CountryName.Contains(searchTerm, comparison))
-        {
-            return (ContainsMatch, "Name Contains Match");
-        }
-
-        // Check for partial word matches in country name
-        var countryWords = country.CountryName.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-        foreach (var word in countryWords)
-        {
-            if (word.StartsWith(searchTerm, comparison) && searchTerm.Length >= 3)
-            {
-                return (PartialMatch, "Word Prefix Match");
-            }
-        }
-
-        return (0, "No Match");
-    }
-
-    /// <summary>
-    /// Build the final search result response
-    /// </summary>
-    private static object BuildSearchResult(string searchTerm, 
-        List<(Country Country, int Score, string MatchType)> searchResults, 
-        int maxResults, int totalCountriesAvailable)
-    {
-        var countries = searchResults.Select(result => new
-        {
-            Country = result.Country,
-            MatchScore = result.Score,
-            MatchType = result.MatchType,
-            MatchDetails = new
-            {
-                CountryCode = result.Country.CountryShortCode,
-                CountryName = result.Country.CountryName
-            }
-        }).ToList();
-
-        return new
-        {
-            SearchCriteria = new
-            {
-                SearchTerm = searchTerm,
-                MaxResults = maxResults,
-                TotalCountriesSearched = totalCountriesAvailable
-            },
-            Results = new
-            {
-                TotalMatches = searchResults.Count,
-                HasMoreResults = searchResults.Count == maxResults,
-                Countries = countries
-            },
-            SearchStats = searchResults.Any() ? new
-            {
-                BestMatchScore = searchResults.Max(r => r.Score),
-                MatchTypes = searchResults.GroupBy(r => r.MatchType)
-                    .Select(g => new { Type = g.Key, Count = g.Count() })
-                    .ToList()
-            } : null,
-            SearchHints = GenerateSearchHints(searchTerm, searchResults.Count)
-        };
-    }
-
-    /// <summary>
-    /// Generate helpful search hints based on results
-    /// </summary>
-    private static object? GenerateSearchHints(string searchTerm, int resultCount)
-    {
-        if (resultCount == 0)
-        {
-            return new
-            {
-                NoResults = true,
-                Suggestions = new[]
-                {
-                    "Try a shorter search term (2-3 letters)",
-                    "Use partial country names like 'Unit' for United States/Kingdom",
-                    "Use standard country codes like 'US', 'GB', 'DE'",
-                    "Check spelling of the country name"
-                }
-            };
-        }
-
-        if (resultCount == 1)
-        {
-            return new
-            {
-                SingleResult = true,
-                Note = "Perfect match found! This might be exactly what you're looking for."
-            };
-        }
-
-        if (searchTerm.Length == 2)
-        {
-            return new
-            {
-                CountryCodeSearch = true,
-                Note = "2-letter search detected. This might be a country code search."
-            };
-        }
-
-        return null;
-    }
-
-    #region AI-Optimized Helper Methods
+    #region Helper Methods (kept minimal)
 
     private static string DetermineLocationType(Address? address)
     {
@@ -1165,157 +317,19 @@ public class SearchTool(IAzureMapsService azureMapsService, ILogger<SearchTool> 
         return Math.Min(1.0, baseScore);
     }
 
-    private static string[] GenerateLocationUsageHints(double latitude, double longitude)
-    {
-        var hints = new List<string>
-        {
-            "Use coordinates for precise mapping and navigation",
-            "Suitable for location-based services and routing"
-        };
+    // Usage hints removed
 
-        var precision = ResponseHelper.DeterminePrecisionLevel(latitude, longitude);
-        hints.Add($"Precision level: {precision}");
+    // Query quality scoring removed
 
-        if (Math.Abs(latitude) > 60)
-        {
-            hints.Add("High latitude location - consider seasonal accessibility");
-        }
+    // Confidence parsing removed
 
-        hints.Add("Combine with routing tools for navigation planning");
-        return hints.ToArray();
-    }
+    // Optimization tips removed
 
-    private static object AnalyzeQueryQuality(string query)
-    {
-        var hasCommas = query.Contains(',');
-        var hasNumbers = query.Any(char.IsDigit);
-        var wordCount = query.Split(' ', StringSplitOptions.RemoveEmptyEntries).Length;
+    // Query suggestions removed
 
-        var qualityScore = 0.5; // Base score
-        if (hasCommas) qualityScore += 0.2;
-        if (hasNumbers) qualityScore += 0.1;
-        if (wordCount > 2) qualityScore += 0.2;
+    // Geographic context helpers removed for simplicity
 
-        return new
-        {
-            score = Math.Min(1.0, qualityScore),
-            rating = qualityScore switch
-            {
-                >= 0.8 => "EXCELLENT",
-                >= 0.6 => "GOOD", 
-                >= 0.4 => "FAIR",
-                _ => "POOR"
-            },
-            suggestions = GenerateQuerySuggestions(query, hasCommas, wordCount)
-        };
-    }
-
-    private static double ParseConfidence(string confidence)
-    {
-        return confidence.ToLowerInvariant() switch
-        {
-            "high" => 0.9,
-            "medium" => 0.6,
-            "low" => 0.3,
-            _ => 0.1
-        };
-    }
-
-    private static string[] GenerateOptimizationTips(string query, int resultCount)
-    {
-        var tips = new List<string>();
-
-        if (resultCount == 0)
-        {
-            tips.Add("Try adding city, state, or country context");
-            tips.Add("Check spelling and use common abbreviations");
-            tips.Add("Consider using landmark names or postal codes");
-        }
-        else if (resultCount == 1)
-        {
-            tips.Add("Excellent! Single high-confidence match found");
-            tips.Add("Use coordinates for routing or further analysis");
-        }
-        else if (resultCount > 10)
-        {
-            tips.Add("Many results found - consider being more specific");
-            tips.Add("Add geographic context to narrow results");
-        }
-        else
-        {
-            tips.Add("Good results found - review confidence scores");
-            tips.Add("Select best match based on your use case");
-        }
-
-        return tips.ToArray();
-    }
-
-    private static string[] GenerateQuerySuggestions(string query, bool hasCommas, int wordCount)
-    {
-        var suggestions = new List<string>();
-
-        if (!hasCommas && wordCount > 1)
-        {
-            suggestions.Add("Separate location parts with commas for better accuracy");
-        }
-
-        if (wordCount == 1)
-        {
-            suggestions.Add("Add city, state, or country for better results");
-        }
-
-        if (!query.Any(char.IsDigit) && wordCount > 2)
-        {
-            suggestions.Add("Include street numbers if searching for addresses");
-        }
-
-        return suggestions.ToArray();
-    }
-
-    private static string DetermineGeographicContext(double latitude, double longitude)
-    {
-        var context = new List<string>();
-
-        // Hemisphere information
-        context.Add(latitude >= 0 ? "Northern Hemisphere" : "Southern Hemisphere");
-        context.Add(longitude >= 0 ? "Eastern Hemisphere" : "Western Hemisphere");
-
-        // Rough geographic regions
-        if (Math.Abs(latitude) < 23.5)
-        {
-            context.Add("Tropical Zone");
-        }
-        else if (Math.Abs(latitude) < 66.5)
-        {
-            context.Add("Temperate Zone");
-        }
-        else
-        {
-            context.Add("Polar Zone");
-        }
-
-        return string.Join(", ", context);
-    }
-
-    private static string CalculateAddressCompleteness(Address? address)
-    {
-        if (address == null) return "MINIMAL";
-
-        var score = 0;
-        if (!string.IsNullOrEmpty(address.StreetNumber)) score++;
-        if (!string.IsNullOrEmpty(address.StreetName)) score++;
-        if (!string.IsNullOrEmpty(address.Locality)) score++;
-        if (!string.IsNullOrEmpty(address.PostalCode)) score++;
-        if (!string.IsNullOrEmpty(address.CountryRegion?.Name)) score++;
-
-        return score switch
-        {
-            >= 4 => "COMPLETE",
-            >= 3 => "GOOD",
-            >= 2 => "PARTIAL",
-            _ => "MINIMAL"
-        };
-    }
+    // Address completeness removed for simplicity
 
     #endregion
 }
