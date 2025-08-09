@@ -49,32 +49,32 @@ public class RoutingTool(IAzureMapsService azureMapsService, ILogger<RoutingTool
     public async Task<string> GetRouteDirections(
         [McpToolTrigger(
             "routing_directions",
-            "Calculate detailed driving/walking/cycling directions between two or more geographic coordinates. Returns comprehensive route information including total distance, estimated travel time, turn-by-turn navigation instructions, and route geometry. Supports multiple travel modes (car, bicycle, pedestrian, etc.) and route optimization preferences (fastest vs shortest). Can handle waypoints for multi-stop routes."
+            "Directions between 2+ points with travelMode/routeType."
         )] ToolInvocationContext context,
         [McpToolProperty(
             "coordinates",
             "array",
-            "Array of coordinate objects with latitude and longitude properties. Must include at least 2 points (origin and destination). Additional points will be treated as waypoints. First coordinate is origin, last is destination. Example: [{'latitude': 47.6062, 'longitude': -122.3321}, {'latitude': 47.6205, 'longitude': -122.3493}]"
+            "[{latitude,longitude}, ...] min 2 (origin,destination). Waypoints allowed."
         )] CoordinateInfo[] coordinates,
         [McpToolProperty(
             "travelMode",
             "string",
-            "Mode of travel: 'car' (default), 'truck', 'taxi', 'bus', 'van', 'motorcycle', 'bicycle', 'pedestrian'. Examples: 'car', 'bicycle', 'pedestrian'"
+            "car|truck|taxi|bus|van|motorcycle|bicycle|pedestrian"
         )] string travelMode = "car",
         [McpToolProperty(
             "routeType",
             "string",
-            "Type of route optimization: 'fastest' (default), 'shortest'. Examples: 'fastest', 'shortest'"
+            "fastest|shortest"
         )] string routeType = "fastest",
         [McpToolProperty(
             "avoidTolls",
             "string",
-            "Whether to avoid toll roads: 'true' or 'false' (default: 'false'). Examples: 'true', 'false'"
+            "boolean string: true|false"
         )] string avoidTolls = "false",
         [McpToolProperty(
             "avoidHighways",
             "string",
-            "Whether to avoid highways: 'true' or 'false' (default: 'false'). Examples: 'true', 'false'"
+            "boolean string: true|false"
         )] string avoidHighways = "false"
     )
     {
@@ -130,49 +130,33 @@ public class RoutingTool(IAzureMapsService azureMapsService, ILogger<RoutingTool
             if (response.Value?.Routes != null && response.Value.Routes.Any())
             {
                 var route = response.Value.Routes.First();
-                
-                var result = new
+                var dist_m = route.Summary.LengthInMeters;
+                var time_s = route.Summary.TravelTimeDuration?.TotalSeconds;
+                var geom = route.Legs?.SelectMany(leg => leg.Points ?? new List<GeoPosition>())
+                    .Select(p => new[] { p.Latitude, p.Longitude }).ToList();
+                var legs = route.Legs?.Select(leg => new
                 {
-                    Summary = new
-                    {
-                        DistanceInMeters = route.Summary.LengthInMeters,
-                        DistanceInKilometers = route.Summary.LengthInMeters.HasValue 
-                            ? Math.Round((double)route.Summary.LengthInMeters.Value / 1000.0, 2) 
-                            : (double?)null,
-                        TravelTimeInSeconds = route.Summary.TravelTimeDuration?.TotalSeconds,
-                        TravelTimeFormatted = route.Summary.TravelTimeDuration?.ToString(@"hh\:mm\:ss"),
-                        DepartureTime = route.Summary.DepartureTime,
-                        ArrivalTime = route.Summary.ArrivalTime
-                    },
-                    Instructions = route.Guidance?.Instructions?.Select(instruction => new
-                    {
-                        Text = instruction.Message,
-                        DistanceInMeters = instruction.RouteOffsetInMeters,
-                        TravelTimeInSeconds = instruction.TravelTimeInSeconds,
-                        ManeuverType = instruction.Maneuver?.ToString(),
-                        TurnAngleInDegrees = instruction.TurnAngleInDegrees,
-                        RoadNumbers = instruction.RoadNumbers,
-                        SignpostText = instruction.SignpostText
-                    }).ToList(),
-                    RouteGeometry = route.Legs?.SelectMany(leg => leg.Points ?? new List<GeoPosition>())
-                        .Select(point => new { Latitude = point.Latitude, Longitude = point.Longitude }).ToList(),
-                    Legs = route.Legs?.Select((leg, index) => new
-                    {
-                        LegIndex = index,
-                        Summary = new
-                        {
-                            DistanceInMeters = leg.Summary.LengthInMeters,
-                            TravelTimeInSeconds = leg.Summary.TravelTimeInSeconds,
-                            TrafficDelayInSeconds = leg.Summary.TrafficDelayInSeconds
-                        }
-                    }).ToList()
-                };
+                    dist_m = leg.Summary.LengthInMeters,
+                    time_s = leg.Summary.TravelTimeInSeconds,
+                    delay_s = leg.Summary.TrafficDelayInSeconds
+                }).ToList();
 
-                logger.LogInformation("Successfully calculated route: {Distance}km, {Time}", 
-                    result.Summary.DistanceInKilometers, 
-                    result.Summary.TravelTimeFormatted);
+                var instr = route.Guidance?.Instructions?.Select(i => new
+                {
+                    msg = i.Message,
+                    off_m = i.RouteOffsetInMeters,
+                    t_s = i.TravelTimeInSeconds,
+                    man = i.Maneuver?.ToString(),
+                    turn_deg = i.TurnAngleInDegrees
+                }).ToList();
 
-                return JsonSerializer.Serialize(new { success = true, result }, new JsonSerializerOptions { WriteIndented = false });
+                var result = new { dist_m, time_s, geom, legs, instr };
+
+                logger.LogInformation("Route ok: {Km}km, {Time}",
+                    dist_m.HasValue ? Math.Round(dist_m.Value / 1000.0, 2) : null,
+                    time_s.HasValue ? TimeSpan.FromSeconds(time_s.Value).ToString(@"hh\:mm\:ss") : null);
+
+                return JsonSerializer.Serialize(new { ok = true, result }, new JsonSerializerOptions { WriteIndented = false });
             }
 
             logger.LogWarning("No route found between the specified coordinates");
@@ -197,27 +181,27 @@ public class RoutingTool(IAzureMapsService azureMapsService, ILogger<RoutingTool
     public async Task<string> GetRouteMatrix(
         [McpToolTrigger(
             "routing_matrix",
-            "Calculate travel times and distances between multiple origin and destination points in a matrix format. This is essential for optimization scenarios like delivery route planning, finding closest locations, or logistics optimization. Returns a comprehensive matrix showing travel time and distance from each origin to each destination, enabling efficient route planning and location analysis."
+            "Travel time/distance matrix for origins x destinations."
         )] ToolInvocationContext context,
         [McpToolProperty(
             "origins",
             "array",
-            "Array of origin coordinate objects with latitude and longitude properties. Each coordinate represents a starting point for route calculations. Example: [{'latitude': 47.6062, 'longitude': -122.3321}, {'latitude': 47.6205, 'longitude': -122.3493}]"
+            "Array of {latitude,longitude}."
         )] CoordinateInfo[] origins,
         [McpToolProperty(
             "destinations",
             "array",
-            "Array of destination coordinate objects with latitude and longitude properties. Each coordinate represents an ending point for route calculations. Example: [{'latitude': 47.6740, 'longitude': -122.1215}, {'latitude': 47.6587, 'longitude': -122.1384}]"
+            "Array of {latitude,longitude}."
         )] CoordinateInfo[] destinations,
         [McpToolProperty(
             "travelMode",
             "string",
-            "Mode of travel: 'car' (default), 'truck', 'taxi', 'bus', 'van', 'motorcycle', 'bicycle', 'pedestrian'. Examples: 'car', 'bicycle', 'pedestrian'"
+            "car|truck|taxi|bus|van|motorcycle|bicycle|pedestrian"
         )] string travelMode = "car",
         [McpToolProperty(
             "routeType",
             "string",
-            "Type of route optimization: 'fastest' (default), 'shortest'. Examples: 'fastest', 'shortest'"
+            "fastest|shortest"
         )] string routeType = "fastest"
     )
     {
@@ -281,7 +265,8 @@ public class RoutingTool(IAzureMapsService azureMapsService, ILogger<RoutingTool
             if (response.Value?.Matrix != null)
             {
                 var matrix = response.Value.Matrix;
-                var results = new List<object>();
+                var items = new List<object>(matrix.Count * (matrix.FirstOrDefault()?.Count ?? 1));
+                int okCount = 0;
 
                 for (int i = 0; i < matrix.Count; i++)
                 {
@@ -289,57 +274,40 @@ public class RoutingTool(IAzureMapsService azureMapsService, ILogger<RoutingTool
                     for (int j = 0; j < row.Count; j++)
                     {
                         var cell = row[j];
-                        
-                        results.Add(new
+                        if (cell.Summary != null)
                         {
-                            OriginIndex = i,
-                            DestinationIndex = j,
-                            OriginCoordinate = new 
-                            { 
-                                Latitude = originPoints[i].Latitude, 
-                                Longitude = originPoints[i].Longitude 
-                            },
-                            DestinationCoordinate = new 
-                            { 
-                                Latitude = destinationPoints[j].Latitude, 
-                                Longitude = destinationPoints[j].Longitude 
-                            },
-                            Response = cell.Summary != null ? new
+                            okCount++;
+                            items.Add(new
                             {
-                                DistanceInMeters = cell.Summary.LengthInMeters,
-                                DistanceInKilometers = cell.Summary.LengthInMeters.HasValue 
-                                    ? Math.Round((double)cell.Summary.LengthInMeters.Value / 1000.0, 2) 
-                                    : (double?)null,
-                                TravelTimeInSeconds = cell.Summary.TravelTimeInSeconds,
-                                TravelTimeFormatted = cell.Summary.TravelTimeInSeconds.HasValue
-                                    ? TimeSpan.FromSeconds(cell.Summary.TravelTimeInSeconds.Value).ToString(@"hh\:mm\:ss")
-                                    : null,
-                                TrafficDelayInSeconds = cell.Summary.TrafficDelayInSeconds,
-                                DepartureTime = cell.Summary.DepartureTime,
-                                ArrivalTime = cell.Summary.ArrivalTime
-                            } : null,
-                            Error = cell.Summary == null ? "Route not found" : null
-                        });
+                                i,
+                                j,
+                                o = new[] { originPoints[i].Latitude, originPoints[i].Longitude },
+                                d = new[] { destinationPoints[j].Latitude, destinationPoints[j].Longitude },
+                                dist_m = cell.Summary.LengthInMeters,
+                                time_s = cell.Summary.TravelTimeInSeconds,
+                                delay_s = cell.Summary.TrafficDelayInSeconds
+                            });
+                        }
+                        else
+                        {
+                            items.Add(new { i, j, err = "not_found" });
+                        }
                     }
                 }
 
                 var result = new
                 {
-                    Summary = new
-                    {
-                        OriginCount = originPoints.Count,
-                        DestinationCount = destinationPoints.Count,
-                        TotalCombinations = results.Count,
-                        SuccessfulRoutes = results.Count(r => ((dynamic)r).Response != null),
-                        FailedRoutes = results.Count(r => ((dynamic)r).Response == null)
-                    },
-                    Matrix = results
+                    oc = originPoints.Count,
+                    dc = destinationPoints.Count,
+                    total = items.Count,
+                    ok = okCount,
+                    fail = items.Count - okCount,
+                    items
                 };
 
-                logger.LogInformation("Successfully calculated route matrix: {Successful}/{Total} routes", 
-                    result.Summary.SuccessfulRoutes, result.Summary.TotalCombinations);
+                logger.LogInformation("Route matrix ok: {Ok}/{Total}", okCount, items.Count);
 
-                return JsonSerializer.Serialize(new { success = true, result }, new JsonSerializerOptions { WriteIndented = false });
+                return JsonSerializer.Serialize(new { ok = true, result }, new JsonSerializerOptions { WriteIndented = false });
             }
 
             logger.LogWarning("No route matrix data returned");
@@ -364,37 +332,37 @@ public class RoutingTool(IAzureMapsService azureMapsService, ILogger<RoutingTool
     public async Task<string> GetRouteRange(
         [McpToolTrigger(
             "routing_range",
-            "Calculate the geographic area reachable within a specified time limit or distance from a starting point. This creates an 'isochrone' or 'isodistance' polygon showing all locations accessible within the given constraints. Useful for service area analysis, delivery zone planning, emergency response coverage, and accessibility studies. Returns polygon coordinates that define the reachable boundary."
+            "Reachable area polygon by time or distance from a point."
         )] ToolInvocationContext context,
         [McpToolProperty(
             "latitude",
             "string",
-            "Starting point latitude coordinate as a decimal number (e.g., '47.6062'). Must be between -90 and 90 degrees."
+            "number: -90..90"
         )] double latitude,
         [McpToolProperty(
             "longitude",
             "string",
-            "Starting point longitude coordinate as a decimal number (e.g., '-122.3321'). Must be between -180 and 180 degrees."
+            "number: -180..180"
         )] double longitude,
         [McpToolProperty(
             "timeBudgetInSeconds",
             "string",
-            "Time budget in seconds for reachability calculation (e.g., '1800' for 30 minutes). Use either this OR distanceBudgetInMeters, not both. This defines how far you can travel within the given time."
+            "integer seconds; use XOR with distanceBudgetInMeters"
         )] int? timeBudgetInSeconds = null,
         [McpToolProperty(
             "distanceBudgetInMeters",
             "string",
-            "Distance budget in meters for reachability calculation (e.g., '5000' for 5km). Use either this OR timeBudgetInSeconds, not both. This defines the maximum distance you can travel."
+            "integer meters; use XOR with timeBudgetInSeconds"
         )] int? distanceBudgetInMeters = null,
         [McpToolProperty(
             "travelMode",
             "string",
-            "Mode of travel: 'car' (default), 'truck', 'taxi', 'bus', 'van', 'motorcycle', 'bicycle', 'pedestrian'. Examples: 'car', 'bicycle', 'pedestrian'"
+            "car|truck|taxi|bus|van|motorcycle|bicycle|pedestrian"
         )] string travelMode = "car",
         [McpToolProperty(
             "routeType",
             "string",
-            "Type of route optimization: 'fastest' (default), 'shortest'. Examples: 'fastest', 'shortest'"
+            "fastest|shortest"
         )] string routeType = "fastest"
     )
     {
@@ -445,32 +413,16 @@ public class RoutingTool(IAzureMapsService azureMapsService, ILogger<RoutingTool
 
             if (response.Value?.ReachableRange != null)
             {
-                var reachableRange = response.Value.ReachableRange;
-                
-                var result = new
-                {
-                    Center = new
-                    {
-                        Latitude = reachableRange.Center.Latitude,
-                        Longitude = reachableRange.Center.Longitude
-                    },
-                    Budget = timeBudgetInSeconds.HasValue 
-                        ? (object)new { TimeBudgetInSeconds = timeBudgetInSeconds.Value, TimeBudgetFormatted = TimeSpan.FromSeconds(timeBudgetInSeconds.Value).ToString(@"hh\:mm\:ss") }
-                        : new { DistanceBudgetInMeters = distanceBudgetInMeters!.Value, DistanceBudgetInKilometers = Math.Round(distanceBudgetInMeters.Value / 1000.0, 2) },
-                    TravelMode = travelMode,
-                    RouteType = routeType,
-                    Boundary = reachableRange.Boundary?.Select(point => new
-                    {
-                        Latitude = point.Latitude,
-                        Longitude = point.Longitude
-                    }).ToList(),
-                    BoundaryPointCount = reachableRange.Boundary?.Count ?? 0
-                };
+                var rr = response.Value.ReachableRange;
+                var center = new[] { rr.Center.Latitude, rr.Center.Longitude };
+                var budget = timeBudgetInSeconds.HasValue
+                    ? (object)new { t_s = timeBudgetInSeconds.Value }
+                    : new { d_m = distanceBudgetInMeters!.Value };
+                var boundary = rr.Boundary?.Select(p => new[] { p.Latitude, p.Longitude }).ToList();
+                var result = new { center, budget, mode = travelMode, type = routeType, boundary, n = boundary?.Count ?? 0 };
 
-                logger.LogInformation("Successfully calculated route range with {PointCount} boundary points", 
-                    result.BoundaryPointCount);
-
-                return JsonSerializer.Serialize(new { success = true, result }, new JsonSerializerOptions { WriteIndented = false });
+                logger.LogInformation("Route range ok: {Points} points", result.n);
+                return JsonSerializer.Serialize(new { ok = true, result }, new JsonSerializerOptions { WriteIndented = false });
             }
 
             logger.LogWarning("No reachable range data returned for coordinates: {Latitude}, {Longitude}", latitude, longitude);

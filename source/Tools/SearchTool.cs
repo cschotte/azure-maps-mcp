@@ -43,17 +43,17 @@ public class SearchTool(IAzureMapsService azureMapsService, ILogger<SearchTool> 
     public async Task<string> Geocoding(
         [McpToolTrigger(
             "search_geocoding",
-            "Convert street addresses, landmarks, or place names into precise geographic coordinates (latitude and longitude). This advanced forward geocoding service handles various address formats from complete street addresses to partial addresses or landmark names. Returns detailed address components, confidence scores, and quality metrics. Essential for mapping applications, location-based services, and spatial analysis."
+            "Forward geocode address or place to coordinates."
         )] ToolInvocationContext context,
         [McpToolProperty(
             "address",
             "string",
-            "Address, partial address, or landmark name to geocode. Supports various formats including full addresses, landmarks, points of interest, and partial addresses. Examples: '1600 Pennsylvania Avenue, Washington, DC', 'Eiffel Tower', 'Times Square', '123 Main Street, Seattle, WA', 'Central Park'"
+            "Free-text address or POI."
         )] string address,
         [McpToolProperty(
             "maxResults",
             "number",
-            "Maximum number of results to return as a number. Must be between 1 and 20. Higher values provide more alternatives but may include less relevant results. Examples: 1, 5, 10, 20. Default is 5 if not specified."
+            "1..20 (default 5)"
         )] int maxResults = 5
     )
     {
@@ -75,33 +75,26 @@ public class SearchTool(IAzureMapsService azureMapsService, ILogger<SearchTool> 
 
             if (response.Value?.Features != null && response.Value.Features.Any())
             {
-                var results = response.Value.Features.Select((feature, index) => new
+                var items = response.Value.Features.Select(f => new
                 {
-                    ResultIndex = index + 1,
-                    Address = feature.Properties.Address?.FormattedAddress,
-                    Coordinates = ResponseHelper.CreateLocationSummary(
-                        feature.Geometry.Coordinates[1], 
-                        feature.Geometry.Coordinates[0]),
-                    AddressComponents = new
+                    addr = f.Properties.Address?.FormattedAddress,
+                    lat = f.Geometry.Coordinates[1],
+                    lon = f.Geometry.Coordinates[0],
+                    comp = new
                     {
-                        StreetNumber = feature.Properties.Address?.StreetNumber,
-                        StreetName = feature.Properties.Address?.StreetName,
-                        Locality = feature.Properties.Address?.Locality,
-                        PostalCode = feature.Properties.Address?.PostalCode,
-                        CountryRegion = feature.Properties.Address?.CountryRegion
+                        no = f.Properties.Address?.StreetNumber,
+                        street = f.Properties.Address?.StreetName,
+                        city = f.Properties.Address?.Locality,
+                        zip = f.Properties.Address?.PostalCode,
+                        country = f.Properties.Address?.CountryRegion?.Name,
+                        iso = f.Properties.Address?.CountryRegion?.Iso
                     },
-                    Confidence = feature.Properties.Confidence.ToString()
+                    conf = f.Properties.Confidence.ToString()
                 }).ToList();
 
-                var result = new
-                {
-                    Query = normalizedAddress,
-                    TotalResults = results.Count,
-                    Results = results
-                };
-
-                logger.LogInformation("Successfully geocoded address: found {Count} results", results.Count);
-                return ResponseHelper.CreateSuccessResponse(result);
+                var result = new { q = normalizedAddress, n = items.Count, items };
+                logger.LogInformation("Geocode ok: {Count} results", items.Count);
+                return JsonSerializer.Serialize(new { ok = true, result }, new JsonSerializerOptions { WriteIndented = false });
             }
 
             // No results found
@@ -111,7 +104,7 @@ public class SearchTool(IAzureMapsService azureMapsService, ILogger<SearchTool> 
                 "Check spelling of street names and city names"
             };
             
-            return ResponseHelper.CreateValidationError("No results found for the provided address", suggestions);
+            return JsonSerializer.Serialize(new { ok = false, err = "no_results", tips = suggestions });
         }
         catch (Exception ex)
         {
@@ -131,17 +124,17 @@ public class SearchTool(IAzureMapsService azureMapsService, ILogger<SearchTool> 
     public async Task<string> ReverseGeocoding(
         [McpToolTrigger(
             "search_geocoding_reverse",
-            "Convert geographic coordinates into street addresses and location details."
+            "Reverse geocode coordinates to address."
         )] ToolInvocationContext context,
         [McpToolProperty(
             "latitude",
             "string",
-            "Latitude coordinate (-90 to 90). Example: '47.6062'"
+            "number: -90..90"
         )] double latitude,
         [McpToolProperty(
             "longitude",
             "string",
-            "Longitude coordinate (-180 to 180). Example: '-122.3321'"
+            "number: -180..180"
         )] double longitude
     )
     {
@@ -159,27 +152,28 @@ public class SearchTool(IAzureMapsService azureMapsService, ILogger<SearchTool> 
 
             if (response.Value?.Features?.Any() == true)
             {
-                var feature = response.Value.Features.First();
-                
+                var f = response.Value.Features.First();
                 var result = new
                 {
-                    Address = feature.Properties.Address?.FormattedAddress,
-                    AddressComponents = new
+                    addr = f.Properties.Address?.FormattedAddress,
+                    comp = new
                     {
-                        StreetNumber = feature.Properties.Address?.StreetNumber,
-                        StreetName = feature.Properties.Address?.StreetName,
-                        PostalCode = feature.Properties.Address?.PostalCode,
-                        CountryRegion = feature.Properties.Address?.CountryRegion,
-                        Locality = feature.Properties.Address?.Locality
+                        no = f.Properties.Address?.StreetNumber,
+                        street = f.Properties.Address?.StreetName,
+                        zip = f.Properties.Address?.PostalCode,
+                        country = f.Properties.Address?.CountryRegion?.Name,
+                        iso = f.Properties.Address?.CountryRegion?.Iso,
+                        city = f.Properties.Address?.Locality
                     },
-                    Coordinates = ResponseHelper.CreateLocationSummary(latitude, longitude)
+                    lat = latitude,
+                    lon = longitude
                 };
 
-                logger.LogInformation("Successfully reverse geocoded coordinates");
-                return ResponseHelper.CreateSuccessResponse(result);
+                logger.LogInformation("Reverse geocode ok");
+                return JsonSerializer.Serialize(new { ok = true, result }, new JsonSerializerOptions { WriteIndented = false });
             }
 
-            return ResponseHelper.CreateErrorResponse("No address found for these coordinates");
+            return JsonSerializer.Serialize(new { ok = false, err = "no_results" });
         }
         catch (Exception ex)
         {
@@ -195,27 +189,27 @@ public class SearchTool(IAzureMapsService azureMapsService, ILogger<SearchTool> 
     public async Task<string> GetPolygon(
         [McpToolTrigger(
             "search_polygon",
-            "Retrieve administrative boundary polygons for geographic locations such as city limits, postal code areas, state/province boundaries, or country borders. This service returns precise polygon coordinates that define these administrative boundaries, enabling spatial analysis, territory mapping, and geofencing applications. Essential for analyzing geographic containment, service area definition, and administrative boundary visualization."
+            "Get admin boundary polygon at a point."
         )] ToolInvocationContext context,
         [McpToolProperty(
             "latitude",
             "string",
-            "Latitude coordinate of the location to get boundary polygon for as a decimal number (e.g., '47.61256'). Must be between -90 and 90 degrees."
+            "number: -90..90"
         )] double latitude,
         [McpToolProperty(
             "longitude",
             "string",
-            "Longitude coordinate of the location to get boundary polygon for as a decimal number (e.g., '-122.204141'). Must be between -180 and 180 degrees."
+            "number: -180..180"
         )] double longitude,
         [McpToolProperty(
             "resultType",
             "string",
-            "Type of administrative boundary to retrieve: 'locality' (city/town boundaries), 'postalCode' (postal/ZIP code boundaries), 'adminDistrict' (state/province boundaries), 'countryRegion' (country boundaries). Examples: 'locality', 'postalCode', 'adminDistrict'. Default is 'locality'."
+            "Boundary type: locality|postalCode|adminDistrict|countryRegion"
         )] string resultType = "locality",
         [McpToolProperty(
             "resolution",
             "string",
-            "Level of detail for polygon coordinates: 'small' (fewer coordinate points, faster), 'medium' (balanced detail), 'large' (highly detailed boundaries, more points). Examples: 'small', 'medium', 'large'. Default is 'small'."
+            "Polygon detail: small|medium|large"
         )] string resolution = "small"
     )
     {
@@ -252,47 +246,28 @@ public class SearchTool(IAzureMapsService azureMapsService, ILogger<SearchTool> 
 
             if (response.Value?.Geometry != null && response.Value.Geometry.Count > 0)
             {
-                var polygons = new List<object>();
-
+                var geoms = new List<object>();
                 for (int i = 0; i < response.Value.Geometry.Count; i++)
                 {
                     if (response.Value.Geometry[i] is GeoPolygon polygon)
                     {
-                        var coordinates = polygon.Coordinates[0].Select(coord => new
-                        {
-                            Latitude = coord.Latitude,
-                            Longitude = coord.Longitude
-                        }).ToArray();
-
-                        polygons.Add(new
-                        {
-                            PolygonIndex = i,
-                            CoordinateCount = coordinates.Length,
-                            Coordinates = coordinates
-                        });
+                        var coords = polygon.Coordinates[0].Select(c => new[] { c.Latitude, c.Longitude }).ToArray();
+                        geoms.Add(new { i, n = coords.Length, coords });
                     }
                 }
 
-                var result = new
+                var meta = new
                 {
-                    BoundaryInfo = new
-                    {
-                        CopyrightUrl = response.Value.Properties?.CopyrightUrl,
-                        Copyright = response.Value.Properties?.Copyright,
-                        ResultType = resultType,
-                        Resolution = resolution,
-                        QueryCoordinates = new
-                        {
-                            Latitude = latitude,
-                            Longitude = longitude
-                        }
-                    },
-                    PolygonCount = response.Value.Geometry.Count,
-                    Polygons = polygons
+                    type = resultType,
+                    res = resolution,
+                    lat = latitude,
+                    lon = longitude,
+                    cr = response.Value.Properties?.Copyright
                 };
 
-                logger.LogInformation("Successfully retrieved {Count} polygon(s) for boundary", response.Value.Geometry.Count);
-                return JsonSerializer.Serialize(new { success = true, result }, new JsonSerializerOptions { WriteIndented = false });
+                var result = new { meta, n = geoms.Count, geoms };
+                logger.LogInformation("Boundary ok: {Count}", geoms.Count);
+                return JsonSerializer.Serialize(new { ok = true, result }, new JsonSerializerOptions { WriteIndented = false });
             }
 
             logger.LogWarning("No boundary polygon found for coordinates: {Latitude}, {Longitude}", latitude, longitude);
@@ -317,12 +292,12 @@ public class SearchTool(IAzureMapsService azureMapsService, ILogger<SearchTool> 
     public Task<string> GetCountryInfo(
         [McpToolTrigger(
             "search_country_info",
-            "Get comprehensive country information including demographics, geography, economics, and cultural data by ISO country code. Returns enhanced country details with validation insights, related country suggestions, and data quality metrics. Provides rich context for location-based applications, international business, travel planning, and geographic analysis. Includes intelligent error handling and helpful suggestions for invalid codes."
+            "Get country info by ISO code."
         )] ToolInvocationContext context,
         [McpToolProperty(
             "countryCode",
             "string",
-            "ISO 3166-1 alpha-2 country code (2 letters) or alpha-3 code (3 letters). Automatically normalizes input and provides suggestions for invalid codes. Case-insensitive processing. Examples: 'US'/'USA', 'CA'/'CAN', 'GB'/'GBR', 'DE'/'DEU', 'JP'/'JPN', 'AU'/'AUS', 'FR'/'FRA'. Also accepts common variations and provides correction suggestions."
+            "ISO-3166 alpha-2 or alpha-3 (e.g., US or USA)"
         )] string countryCode
     )
     {
@@ -359,9 +334,9 @@ public class SearchTool(IAzureMapsService azureMapsService, ILogger<SearchTool> 
                     countryResult.Country.CountryName, countryResult.MatchMethod, (endTime - startTime).TotalMilliseconds);
 
                 return Task.FromResult(JsonSerializer.Serialize(new { 
-                    success = true, 
-                    country = countryResult.Country, // Maintain backward compatibility 
-                    data = response // Enhanced response structure
+                    ok = true, 
+                    country = countryResult.Country,
+                    data = response
                 }, new JsonSerializerOptions { WriteIndented = false }));
             }
 
@@ -369,18 +344,19 @@ public class SearchTool(IAzureMapsService azureMapsService, ILogger<SearchTool> 
             var errorResponse = BuildCountryNotFoundResponse(normalizedCode, countryCode, startTime, endTime);
             logger.LogWarning("No country data found for code: {CountryCode}", normalizedCode);
 
-            return Task.FromResult(JsonSerializer.Serialize(errorResponse));
+            return Task.FromResult(JsonSerializer.Serialize(new { ok = false, error = errorResponse }));
         }
         catch (Exception ex)
         {
             var endTime = DateTime.UtcNow;
             logger.LogError(ex, "Unexpected error during country lookup for code: {CountryCode}", countryCode);
             return Task.FromResult(JsonSerializer.Serialize(new { 
-                error = "An unexpected error occurred during country lookup",
-                details = ex.Message,
-                inputReceived = countryCode,
-                processingTime = (endTime - startTime).TotalMilliseconds,
-                timestamp = startTime
+                ok = false,
+                err = "unexpected",
+                msg = ex.Message,
+                input = countryCode,
+                ms = (endTime - startTime).TotalMilliseconds,
+                ts = startTime
             }));
         }
     }
@@ -760,17 +736,17 @@ public class SearchTool(IAzureMapsService azureMapsService, ILogger<SearchTool> 
     public Task<string> FindCountries(
         [McpToolTrigger(
             "search_countries",
-            "Find countries by name, continent, or other criteria with intelligent matching and scoring. This tool helps discover countries that match specific geographic, cultural, or economic characteristics. Supports partial name matching, exact code matching, and flexible search patterns. Useful for regional analysis, travel planning, and geographic data exploration."
+            "Search countries by name/code with scoring."
         )] ToolInvocationContext context,
         [McpToolProperty(
             "searchTerm",
             "string",
-            "Search term to find countries. Can be partial country name, exact country code, or geographic identifier. Examples: 'Unit' (finds United States/Kingdom), 'US' (exact match), 'Europe', 'Asia', 'America', 'Island'"
+            "Country name prefix/contains or code"
         )] string searchTerm,
         [McpToolProperty(
             "maxResults",
             "string",
-            "Maximum number of countries to return as a string number. Must be between 1 and 50. Examples: '5', '10', '20'. Default is '10' if not specified."
+            "1..50 (default 10)"
         )] int maxResults = 10
     )
     {
@@ -791,12 +767,12 @@ public class SearchTool(IAzureMapsService azureMapsService, ILogger<SearchTool> 
             var result = BuildSearchResult(searchTerm, searchResults, maxResults, allCountries.Count());
 
             logger.LogInformation("Found {Count} countries matching '{SearchTerm}'", searchResults.Count, searchTerm);
-            return Task.FromResult(JsonSerializer.Serialize(new { success = true, result }, new JsonSerializerOptions { WriteIndented = false }));
+            return Task.FromResult(JsonSerializer.Serialize(new { ok = true, result }, new JsonSerializerOptions { WriteIndented = false }));
         }
         catch (Exception ex)
         {
             logger.LogError(ex, "Unexpected error during country search");
-            return Task.FromResult(JsonSerializer.Serialize(new { error = "An unexpected error occurred" }));
+            return Task.FromResult(JsonSerializer.Serialize(new { ok = false, err = "unexpected" }));
         }
     }
 

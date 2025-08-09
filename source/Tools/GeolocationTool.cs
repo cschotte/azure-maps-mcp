@@ -28,12 +28,12 @@ public class GeolocationTool(IAzureMapsService azureMapsService, ILogger<Geoloca
     public async Task<string> GetCountryCodeByIP(
         [McpToolTrigger(
             "geolocation_ip",
-            "Get country code and location information for a given IP address. Supports both IPv4 and IPv6 addresses. Returns country code, name, and continent information."
+            "Return ISO country for a public IPv4/IPv6 address."
         )] ToolInvocationContext context,
         [McpToolProperty(
             "ipAddress",
             "string",
-            "The IP address to look up (IPv4 or IPv6). Examples: '8.8.8.8', '1.1.1.1', '2001:4898:80e8:b::189'. Private/local addresses cannot be geolocated."
+            "IPv4/IPv6. Public only (no private/loopback). Example: 8.8.8.8"
         )] string ipAddress
     )
     {
@@ -60,15 +60,13 @@ public class GeolocationTool(IAzureMapsService azureMapsService, ILogger<Geoloca
             // Call Azure Maps API
             var response = await _geolocationClient.GetCountryCodeAsync(parsedIP);
             
-            if (response?.Value?.IsoCode != null)
+        if (response?.Value?.IsoCode != null)
             {
                 var country = _countryHelper.GetCountryByCode(response.Value.IsoCode);
                 
                 if (country != null)
                 {
-                    var result = ResponseHelper.CreateCountryInfo(
-                        country.CountryShortCode, 
-                        country.CountryName);
+            var result = new { code = country.CountryShortCode, name = country.CountryName };
                     
                     logger.LogInformation("Successfully retrieved country: {CountryCode} for IP: {IPAddress}", 
                         country.CountryShortCode, ipAddress);
@@ -98,12 +96,12 @@ public class GeolocationTool(IAzureMapsService azureMapsService, ILogger<Geoloca
     public async Task<string> GetCountryCodeBatch(
         [McpToolTrigger(
             "geolocation_ip_batch",
-            "Get country codes for multiple IP addresses. Processes up to 100 IP addresses efficiently with parallel processing."
+            "Return ISO countries for up to 100 IPs in one call."
         )] ToolInvocationContext context,
         [McpToolProperty(
             "ipAddresses",
             "array",
-            "Array of IP addresses to look up. Maximum 100 addresses. Examples: [\"8.8.8.8\", \"1.1.1.1\"]"
+            "Array of IPv4/IPv6 strings (max 100). Duplicates removed."
         )] string[] ipAddresses
     )
     {
@@ -121,13 +119,24 @@ public class GeolocationTool(IAzureMapsService azureMapsService, ILogger<Geoloca
             // Process IPs in parallel
             var results = await ProcessIPAddressesBatch(uniqueIPs);
             
-            var successful = results.Where(r => r.IsSuccess).ToList();
-            var failed = results.Where(r => !r.IsSuccess).Select(r => new { r.IPAddress, r.Error }).ToList();
+            var okItems = results.Where(r => r.IsSuccess && r.Country != null)
+                .Select(r => new { ip = r.IPAddress, code = r.Country!.CountryShortCode, name = r.Country!.CountryName })
+                .ToList();
+            var failItems = results.Where(r => !r.IsSuccess)
+                .Select(r => new { ip = r.IPAddress, err = r.Error })
+                .ToList();
 
-            var response = ResponseHelper.CreateBatchSummary(successful, failed.Cast<object>().ToList(), ipAddresses.Length);
+            var response = new
+            {
+                total = ipAddresses.Length,
+                ok = okItems.Count,
+                fail = failItems.Count,
+                rate = ipAddresses.Length > 0 ? Math.Round((double)okItems.Count / ipAddresses.Length * 100, 1) : 0,
+                items = new { ok = okItems, fail = failItems }
+            };
             
             logger.LogInformation("Completed batch geolocation: {Success}/{Total} successful", 
-                successful.Count, uniqueIPs.Count);
+                okItems.Count, uniqueIPs.Count);
 
             return ResponseHelper.CreateSuccessResponse(response);
         }
@@ -180,17 +189,44 @@ public class GeolocationTool(IAzureMapsService azureMapsService, ILogger<Geoloca
                 };
             }
 
-            var response = await _geolocationClient.GetCountryCodeAsync(validation.ParsedIP!);
+            var parsedIP = validation.ParsedIP!;
 
-            if (response.Value?.IsoCode != null)
+            // Skip private and loopback addresses (can't be geolocated)
+            if (ValidationHelper.IsPrivateIP(parsedIP) || IPAddress.IsLoopback(parsedIP))
             {
-                var country = _countryHelper.GetCountryByCode(response.Value.IsoCode);
-                
+                var message = IPAddress.IsLoopback(parsedIP)
+                    ? "Loopback address refers to local machine and cannot be geolocated"
+                    : "Private IP address cannot be geolocated";
+
                 return new GeolocationResult
                 {
                     IPAddress = ip,
-                    IsSuccess = true,
-                    Country = country
+                    IsSuccess = false,
+                    Error = message
+                };
+            }
+
+            var response = await _geolocationClient.GetCountryCodeAsync(parsedIP);
+
+            if (response?.Value?.IsoCode != null)
+            {
+                var country = _countryHelper.GetCountryByCode(response.Value.IsoCode);
+
+                if (country != null)
+                {
+                    return new GeolocationResult
+                    {
+                        IPAddress = ip,
+                        IsSuccess = true,
+                        Country = country
+                    };
+                }
+
+                return new GeolocationResult
+                {
+                    IPAddress = ip,
+                    IsSuccess = false,
+                    Error = "No country data available"
                 };
             }
 
@@ -219,12 +255,12 @@ public class GeolocationTool(IAzureMapsService azureMapsService, ILogger<Geoloca
     public Task<string> ValidateIPAddress(
         [McpToolTrigger(
             "geolocation_ip_validate",
-            "Validate IP address format and get basic information about the IP address. Returns validation status and address type."
+            "Validate IP format and basic traits."
         )] ToolInvocationContext context,
         [McpToolProperty(
             "ipAddress",
             "string",
-            "The IP address to validate. Examples: '8.8.8.8' (IPv4), '2001:4898:80e8:b::189' (IPv6)."
+            "IPv4/IPv6. Example: 8.8.8.8 or 2001:4898:80e8:b::189"
         )] string ipAddress
     )
     {
@@ -237,14 +273,14 @@ public class GeolocationTool(IAzureMapsService azureMapsService, ILogger<Geoloca
             var parsedIP = validation.ParsedIP!;
             var result = new
             {
-                IsValid = true,
-                IPAddress = ipAddress,
-                AddressFamily = parsedIP.AddressFamily.ToString(),
-                IsIPv4 = parsedIP.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork,
-                IsIPv6 = parsedIP.AddressFamily == System.Net.Sockets.AddressFamily.InterNetworkV6,
-                IsLoopback = IPAddress.IsLoopback(parsedIP),
-                IsPrivate = ValidationHelper.IsPrivateIP(parsedIP),
-                CanGeolocate = !ValidationHelper.IsPrivateIP(parsedIP) && !IPAddress.IsLoopback(parsedIP)
+                ok = true,
+                ip = ipAddress,
+                family = parsedIP.AddressFamily.ToString(),
+                v4 = parsedIP.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork,
+                v6 = parsedIP.AddressFamily == System.Net.Sockets.AddressFamily.InterNetworkV6,
+                loopback = IPAddress.IsLoopback(parsedIP),
+                @private = ValidationHelper.IsPrivateIP(parsedIP),
+                geo = !ValidationHelper.IsPrivateIP(parsedIP) && !IPAddress.IsLoopback(parsedIP)
             };
 
             logger.LogInformation("Successfully validated IP address: {IPAddress}", ipAddress);

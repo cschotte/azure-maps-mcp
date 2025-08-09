@@ -55,42 +55,42 @@ public class RenderTool(IAzureMapsService azureMapsService)
     public async Task<string> GetStaticMapImage(
         [McpToolTrigger(
             "render_staticmap",
-            "Generate a static map image for a geographic area with optional markers and paths. Returns high-quality PNG images."
+            "Render a static PNG map for a bbox with optional markers/paths."
         )] ToolInvocationContext context,
         [McpToolProperty(
             "boundingBox",
             "string",
-            "JSON defining map area. Format: '{\"west\": -122.4, \"south\": 47.5, \"east\": -122.2, \"north\": 47.7}'"
+            "JSON bbox: {west,south,east,north}."
         )] string boundingBox = "{\"west\": -122.4, \"south\": 47.5, \"east\": -122.2, \"north\": 47.7}",
         [McpToolProperty(
             "zoomLevel",
             "number",
-            "Zoom level (1-20). Higher = more detail. Example: 10"
+            "Zoom 1-20."
         )] int zoomLevel = 10,
         [McpToolProperty(
             "width",
             "number",
-            "Image width in pixels (1-8192). Example: 512"
+            "Width px 1-8192."
         )] int width = 512,
         [McpToolProperty(
             "height",
             "number",
-            "Image height in pixels (1-8192). Example: 512"
+            "Height px 1-8192."
         )] int height = 512,
         [McpToolProperty(
             "mapStyle",
             "string",
-            "Map style: 'road', 'satellite', 'hybrid'. Default: 'road'"
+            "Style: road|satellite|hybrid."
         )] string mapStyle = "road",
         [McpToolProperty(
             "markers",
             "array",
-            "Optional markers: [{'latitude': 47.6, 'longitude': -122.3, 'label': 'Seattle', 'color': 'red'}]"
+            "Optional markers array."
         )] MarkerInfo[]? markers = null,
         [McpToolProperty(
             "paths",
             "array", 
-            "Optional paths: [{'coordinates': [{'latitude': 47.6, 'longitude': -122.3}], 'color': 'blue', 'width': 3}]"
+            "Optional paths array."
         )] PathInfo[]? paths = null
     )
     {
