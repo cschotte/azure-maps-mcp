@@ -1,8 +1,15 @@
-# 🗺️ Azure Maps MCP Server
+# 🗺️ Azure Maps ### Focused capabilities
+- 🎯 Geocoding and reverse geocoding with optional admin boundaries
+- 🛣️ Directions, route matrices, reachable range (isochrones)
+- 🖼️ Static map rendering with markers and paths
+- 🌐 IP geolocation and validation (IPv4/IPv6)
+- 🌎 Country lookup and lightweight country search
+- ⏰ Time zone information by coordinates with detailed options
+- 🌤️ Weather data including current conditions, forecasts, and alertsrver
 
-Make any MCP-compatible AI agent location-aware with Azure Maps—search, routes, boundaries, IP geolocation, and static maps in one serverless package.
+Make any MCP-compatible AI agent location-aware with Azure Maps—search, routes, boundaries, IP geolocation, time zones, weather, and static maps in one serverless package.
 
-This project implements a Model Context Protocol (MCP) server on Azure Functions (isolated worker, .NET 9). It exposes a compact, pragmatic set of tools that map directly to Azure Maps capabilities, so agents can geocode, analyze coordinates, compute routes/matrices/ranges, render images, validate IPs, and look up countries—securely and at scale.
+This project implements a Model Context Protocol (MCP) server on Azure Functions (isolated worker, .NET 9). It exposes a compact, pragmatic set of tools that map directly to Azure Maps capabilities, so agents can geocode, analyze coordinates, compute routes/matrices/ranges, render images, validate IPs, look up countries, get time zone information, and access weather data—securely and at scale.
 
 > [!IMPORTANT]
 > This MCP server is in preview. APIs, tool schemas, and behavior may change. Avoid production use.
@@ -69,6 +76,17 @@ Runs on Azure Functions with automatic scaling and pay-per-use economics. Zero i
 - Single and batch country-code lookup
 - Format validation and private/loopback detection
 
+### ⏰ Time zone services
+- Time zone information by coordinates with customizable detail levels
+- Historical timezone transitions and daylight saving time data
+- Support for specific timestamps and transition year ranges
+
+### 🌤️ Weather services
+- Current weather conditions with temperature, humidity, wind, and precipitation
+- Hourly forecasts up to 10 days with detailed meteorological data
+- Daily forecasts up to 45 days with min/max temperatures and conditions
+- Severe weather alerts with geographic area details
+
 ### ⚡ Performance & reliability
 - Auto-scaling via Azure Functions (consumption or premium plans)
 - Pay-per-use model; free-tier options available for Azure Maps
@@ -120,6 +138,38 @@ The tool catalog is registered as "Azure Maps Tool". These are the tool names an
 ### 🌎 Countries
 - search_country_info: countryCode (alpha-2 or alpha-3)
 - search_countries: searchTerm (string), maxResults (1–50)
+
+### ⏰ Time Zone
+- timezone_by_coordinates
+  - latitude (number), longitude (number)
+  - options (none|zoneInfo|transitions|all, default none)
+  - timeStamp (ISO 8601 string, optional)
+  - transitionsFrom (ISO 8601 string, optional)
+  - transitionsYears (number, 1-5, optional)
+
+### 🌤️ Weather
+- weather_current
+  - latitude (number), longitude (number)
+  - unit (metric|imperial, default metric)
+  - duration (0|6|24 hours, default 0)
+  - language (IETF language tag, optional)
+
+- weather_hourly
+  - latitude (number), longitude (number)
+  - duration (1|12|24|72|120|240 hours, default 24)
+  - unit (metric|imperial, default metric)
+  - language (IETF language tag, optional)
+
+- weather_daily
+  - latitude (number), longitude (number)
+  - duration (1|5|10|25|45 days, default 5)
+  - unit (metric|imperial, default metric)
+  - language (IETF language tag, optional)
+
+- weather_alerts
+  - latitude (number), longitude (number)
+  - language (IETF language tag, optional)
+  - details (true|false, default true)
 
 ## 🛠️ Get started
 
@@ -260,7 +310,9 @@ azure-maps-mcp/
 │       ├── 📄 NavigationTool.cs        # 🛣️ Directions, matrix, range, analysis
 │       ├── 📄 RenderTool.cs            # 🖼️ Static map generation
 │       ├── 📄 GeolocationTool.cs       # 🌐 IP geolocation & validation
-│       └── 📄 CountryTool.cs           # 🌎 Country info & search
+│       ├── 📄 CountryTool.cs           # 🌎 Country info & search
+│       ├── 📄 TimeZoneTool.cs          # ⏰ Time zone information by coordinates
+│       └── 📄 WeatherTool.cs           # 🌤️ Weather conditions, forecasts & alerts
 │
 ├── 📄 README.md                         # This comprehensive guide
 └── 📄 LICENSE                           # MIT license for commercial use
