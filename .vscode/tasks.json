@@ -71,6 +71,17 @@
 			"command": "host start",
 			"isBackground": true,
 			"problemMatcher": "$func-dotnet-watch"
+		},
+		{
+			"label": "build (functions) run",
+			"type": "shell",
+			"command": "dotnet",
+			"args": [
+				"build",
+				"/Users/cschotte/GitHub/azure-maps-mcp/source/azure-maps-mcp.csproj",
+				"/property:GenerateFullPaths=true",
+				"/consoleloggerparameters:NoSummary"
+			]
 		}
 	]
 }
