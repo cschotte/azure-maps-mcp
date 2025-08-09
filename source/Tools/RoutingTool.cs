@@ -29,6 +29,50 @@ public class RoutingTool(IAzureMapsService azureMapsService, ILogger<RoutingTool
     private readonly MapsRoutingClient _routingClient = azureMapsService.RoutingClient;
     private readonly CountryHelper _countryHelper = new();
 
+    // Shared option maps to avoid repetition
+    private static readonly Dictionary<string, TravelMode> TravelModes = new(StringComparer.OrdinalIgnoreCase)
+    {
+        { "car", TravelMode.Car },
+        { "truck", TravelMode.Truck },
+        { "taxi", TravelMode.Taxi },
+        { "bus", TravelMode.Bus },
+        { "van", TravelMode.Van },
+        { "motorcycle", TravelMode.Motorcycle },
+        { "bicycle", TravelMode.Bicycle },
+        { "pedestrian", TravelMode.Pedestrian }
+    };
+
+    private static readonly Dictionary<string, RouteType> RouteTypes = new(StringComparer.OrdinalIgnoreCase)
+    {
+        { "fastest", RouteType.Fastest },
+        { "shortest", RouteType.Shortest }
+    };
+
+    private static bool TryParseTravelMode(string value, out TravelMode mode, out string? error)
+    {
+        if (TravelModes.TryGetValue(value, out mode)) { error = null; return true; }
+        error = $"Invalid travel mode '{value}'. Valid options: {string.Join(", ", TravelModes.Keys)}"; return false;
+    }
+
+    private static bool TryParseRouteType(string value, out RouteType type, out string? error)
+    {
+        if (RouteTypes.TryGetValue(value, out type)) { error = null; return true; }
+        error = $"Invalid route type '{value}'. Valid options: {string.Join(", ", RouteTypes.Keys)}"; return false;
+    }
+
+    private static bool TryParseBool(string value, string name, out bool result, out string? error)
+    {
+        if (bool.TryParse(value, out result)) { error = null; return true; }
+        error = $"Invalid {name} value '{value}'. Valid options: true, false"; return false;
+    }
+
+    private static bool TryValidateCoordinate(CoordinateInfo coord, out GeoPosition position)
+    {
+        var lat = coord.Latitude; var lon = coord.Longitude;
+        if (lat < -90 || lat > 90 || lon < -180 || lon > 180) { position = default; return false; }
+        position = new GeoPosition(lon, lat); return true;
+    }
+
     /// <summary>
     /// Calculate route directions between coordinates
     /// </summary>
@@ -72,64 +116,29 @@ public class RoutingTool(IAzureMapsService azureMapsService, ILogger<RoutingTool
                 return JsonSerializer.Serialize(new { error = "At least 2 coordinates (origin and destination) are required" });
             }
 
-            var routePoints = new List<GeoPosition>();
+            var routePoints = new List<GeoPosition>(coordinates.Length);
             foreach (var coord in coordinates)
             {
-                var lat = coord.Latitude;
-                var lon = coord.Longitude;
-
-                if (lat < -90 || lat > 90 || lon < -180 || lon > 180)
-                {
+                if (!TryValidateCoordinate(coord, out var pos))
                     return JsonSerializer.Serialize(new { error = "Invalid coordinate values. Latitude must be between -90 and 90, longitude between -180 and 180" });
-                }
-
-                routePoints.Add(new GeoPosition(lon, lat));
+                routePoints.Add(pos);
             }
 
             logger.LogInformation("Calculating route directions for {Count} points", routePoints.Count);
 
             // Validate travel mode options
-            var validTravelModes = new Dictionary<string, TravelMode>(StringComparer.OrdinalIgnoreCase)
-            {
-                { "car", TravelMode.Car },
-                { "truck", TravelMode.Truck },
-                { "taxi", TravelMode.Taxi },
-                { "bus", TravelMode.Bus },
-                { "van", TravelMode.Van },
-                { "motorcycle", TravelMode.Motorcycle },
-                { "bicycle", TravelMode.Bicycle },
-                { "pedestrian", TravelMode.Pedestrian }
-            };
-
-            if (!validTravelModes.TryGetValue(travelMode, out var parsedTravelMode))
-            {
-                var validOptions = string.Join(", ", validTravelModes.Keys);
-                return JsonSerializer.Serialize(new { error = $"Invalid travel mode '{travelMode}'. Valid options: {validOptions}" });
-            }
+            if (!TryParseTravelMode(travelMode, out var parsedTravelMode, out var tmError))
+                return JsonSerializer.Serialize(new { error = tmError });
 
             // Validate route type options
-            var validRouteTypes = new Dictionary<string, RouteType>(StringComparer.OrdinalIgnoreCase)
-            {
-                { "fastest", RouteType.Fastest },
-                { "shortest", RouteType.Shortest }
-            };
-
-            if (!validRouteTypes.TryGetValue(routeType, out var parsedRouteType))
-            {
-                var validOptions = string.Join(", ", validRouteTypes.Keys);
-                return JsonSerializer.Serialize(new { error = $"Invalid route type '{routeType}'. Valid options: {validOptions}" });
-            }
+            if (!TryParseRouteType(routeType, out var parsedRouteType, out var rtError))
+                return JsonSerializer.Serialize(new { error = rtError });
 
             // Parse boolean parameters
-            if (!bool.TryParse(avoidTolls, out var avoidTollsValue))
-            {
-                return JsonSerializer.Serialize(new { error = $"Invalid avoidTolls value '{avoidTolls}'. Valid options: true, false" });
-            }
-
-            if (!bool.TryParse(avoidHighways, out var avoidHighwaysValue))
-            {
-                return JsonSerializer.Serialize(new { error = $"Invalid avoidHighways value '{avoidHighways}'. Valid options: true, false" });
-            }
+            if (!TryParseBool(avoidTolls, nameof(avoidTolls), out var avoidTollsValue, out var atError))
+                return JsonSerializer.Serialize(new { error = atError });
+            if (!TryParseBool(avoidHighways, nameof(avoidHighways), out var avoidHighwaysValue, out var ahError))
+                return JsonSerializer.Serialize(new { error = ahError });
 
             var options = new RouteDirectionOptions()
             {
@@ -254,69 +263,32 @@ public class RoutingTool(IAzureMapsService azureMapsService, ILogger<RoutingTool
             }
 
             // Convert to GeoPosition lists
-            var originPoints = new List<GeoPosition>();
-            var destinationPoints = new List<GeoPosition>();
-
+            var originPoints = new List<GeoPosition>(origins.Length);
             foreach (var coord in origins)
             {
-                var lat = coord.Latitude;
-                var lon = coord.Longitude;
-
-                if (lat < -90 || lat > 90 || lon < -180 || lon > 180)
-                {
+                if (!TryValidateCoordinate(coord, out var pos))
                     return JsonSerializer.Serialize(new { error = "Invalid origin coordinate values" });
-                }
-
-                originPoints.Add(new GeoPosition(lon, lat));
+                originPoints.Add(pos);
             }
 
+            var destinationPoints = new List<GeoPosition>(destinations.Length);
             foreach (var coord in destinations)
             {
-                var lat = coord.Latitude;
-                var lon = coord.Longitude;
-
-                if (lat < -90 || lat > 90 || lon < -180 || lon > 180)
-                {
+                if (!TryValidateCoordinate(coord, out var pos))
                     return JsonSerializer.Serialize(new { error = "Invalid destination coordinate values" });
-                }
-
-                destinationPoints.Add(new GeoPosition(lon, lat));
+                destinationPoints.Add(pos);
             }
 
             logger.LogInformation("Calculating route matrix for {OriginCount} origins and {DestinationCount} destinations", 
                 originPoints.Count, destinationPoints.Count);
 
             // Validate travel mode options
-            var validTravelModes = new Dictionary<string, TravelMode>(StringComparer.OrdinalIgnoreCase)
-            {
-                { "car", TravelMode.Car },
-                { "truck", TravelMode.Truck },
-                { "taxi", TravelMode.Taxi },
-                { "bus", TravelMode.Bus },
-                { "van", TravelMode.Van },
-                { "motorcycle", TravelMode.Motorcycle },
-                { "bicycle", TravelMode.Bicycle },
-                { "pedestrian", TravelMode.Pedestrian }
-            };
-
-            if (!validTravelModes.TryGetValue(travelMode, out var parsedTravelMode))
-            {
-                var validOptions = string.Join(", ", validTravelModes.Keys);
-                return JsonSerializer.Serialize(new { error = $"Invalid travel mode '{travelMode}'. Valid options: {validOptions}" });
-            }
+            if (!TryParseTravelMode(travelMode, out var parsedTravelMode, out var tmError))
+                return JsonSerializer.Serialize(new { error = tmError });
 
             // Validate route type options
-            var validRouteTypes = new Dictionary<string, RouteType>(StringComparer.OrdinalIgnoreCase)
-            {
-                { "fastest", RouteType.Fastest },
-                { "shortest", RouteType.Shortest }
-            };
-
-            if (!validRouteTypes.TryGetValue(routeType, out var parsedRouteType))
-            {
-                var validOptions = string.Join(", ", validRouteTypes.Keys);
-                return JsonSerializer.Serialize(new { error = $"Invalid route type '{routeType}'. Valid options: {validOptions}" });
-            }
+            if (!TryParseRouteType(routeType, out var parsedRouteType, out var rtError))
+                return JsonSerializer.Serialize(new { error = rtError });
 
             var matrixQuery = new RouteMatrixQuery
             {
@@ -480,36 +452,12 @@ public class RoutingTool(IAzureMapsService azureMapsService, ILogger<RoutingTool
             logger.LogInformation("Calculating route range from coordinates: {Latitude}, {Longitude}", latitude, longitude);
 
             // Validate travel mode options
-            var validTravelModes = new Dictionary<string, TravelMode>(StringComparer.OrdinalIgnoreCase)
-            {
-                { "car", TravelMode.Car },
-                { "truck", TravelMode.Truck },
-                { "taxi", TravelMode.Taxi },
-                { "bus", TravelMode.Bus },
-                { "van", TravelMode.Van },
-                { "motorcycle", TravelMode.Motorcycle },
-                { "bicycle", TravelMode.Bicycle },
-                { "pedestrian", TravelMode.Pedestrian }
-            };
-
-            if (!validTravelModes.TryGetValue(travelMode, out var parsedTravelMode))
-            {
-                var validOptions = string.Join(", ", validTravelModes.Keys);
-                return JsonSerializer.Serialize(new { error = $"Invalid travel mode '{travelMode}'. Valid options: {validOptions}" });
-            }
+            if (!TryParseTravelMode(travelMode, out var parsedTravelMode, out var tmError))
+                return JsonSerializer.Serialize(new { error = tmError });
 
             // Validate route type options
-            var validRouteTypes = new Dictionary<string, RouteType>(StringComparer.OrdinalIgnoreCase)
-            {
-                { "fastest", RouteType.Fastest },
-                { "shortest", RouteType.Shortest }
-            };
-
-            if (!validRouteTypes.TryGetValue(routeType, out var parsedRouteType))
-            {
-                var validOptions = string.Join(", ", validRouteTypes.Keys);
-                return JsonSerializer.Serialize(new { error = $"Invalid route type '{routeType}'. Valid options: {validOptions}" });
-            }
+            if (!TryParseRouteType(routeType, out var parsedRouteType, out var rtError))
+                return JsonSerializer.Serialize(new { error = rtError });
 
             var options = new RouteRangeOptions(centerPoint)
             {
@@ -613,7 +561,7 @@ public class RoutingTool(IAzureMapsService azureMapsService, ILogger<RoutingTool
 
             logger.LogInformation("Analyzing route countries for {Count} waypoints", routePoints.Count);
 
-            // For this analysis, we'll use reverse geocoding to identify countries at key points
+            // Use reverse geocoding to identify countries at waypoints
             // In a more advanced implementation, we could calculate the actual route and sample points along it
             var countriesFound = new HashSet<string>();
             var waypointDetails = new List<object>();
@@ -639,7 +587,11 @@ public class RoutingTool(IAzureMapsService azureMapsService, ILogger<RoutingTool
 
                         countryCode = address.CountryRegion.Iso;
                         countryName = address.CountryRegion.Name;
-                        countryInfo = _countryHelper.GetCountryByCode(countryCode);
+                        if (!string.IsNullOrWhiteSpace(countryCode))
+                        {
+                            countriesFound.Add(countryCode);
+                            countryInfo = _countryHelper.GetCountryByCode(countryCode);
+                        }
                     }
                     else
                     {

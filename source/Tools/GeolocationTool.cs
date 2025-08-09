@@ -9,7 +9,6 @@ using Azure.Maps.Mcp.Common;
 using Azure.Maps.Geolocation;
 using Azure;
 using System.Net;
-using System.Text.Json;
 using CountryData.Standard;
 
 namespace Azure.Maps.Mcp.Tools;
@@ -20,6 +19,7 @@ namespace Azure.Maps.Mcp.Tools;
 public class GeolocationTool(IAzureMapsService azureMapsService, ILogger<GeolocationTool> logger)
 {
     private readonly MapsGeolocationClient _geolocationClient = azureMapsService.GeolocationClient;
+    private readonly CountryHelper _countryHelper = new();
 
     /// <summary>
     /// Get country code and location information for an IP address
@@ -62,8 +62,7 @@ public class GeolocationTool(IAzureMapsService azureMapsService, ILogger<Geoloca
             
             if (response?.Value?.IsoCode != null)
             {
-                var helper = new CountryHelper();
-                var country = helper.GetCountryByCode(response.Value.IsoCode);
+                var country = _countryHelper.GetCountryByCode(response.Value.IsoCode);
                 
                 if (country != null)
                 {
@@ -144,7 +143,6 @@ public class GeolocationTool(IAzureMapsService azureMapsService, ILogger<Geoloca
     /// </summary>
     private async Task<List<GeolocationResult>> ProcessIPAddressesBatch(HashSet<string> ipAddresses)
     {
-        var helper = new CountryHelper();
         var semaphore = new SemaphoreSlim(10, 10);
         
         var tasks = ipAddresses.Select(async ip =>
@@ -152,7 +150,7 @@ public class GeolocationTool(IAzureMapsService azureMapsService, ILogger<Geoloca
             await semaphore.WaitAsync();
             try
             {
-                return await ProcessSingleIPAddress(ip, helper);
+                return await ProcessSingleIPAddress(ip);
             }
             finally
             {
@@ -167,7 +165,7 @@ public class GeolocationTool(IAzureMapsService azureMapsService, ILogger<Geoloca
     /// <summary>
     /// Processes a single IP address
     /// </summary>
-    private async Task<GeolocationResult> ProcessSingleIPAddress(string ip, CountryHelper helper)
+    private async Task<GeolocationResult> ProcessSingleIPAddress(string ip)
     {
         try
         {
@@ -186,7 +184,7 @@ public class GeolocationTool(IAzureMapsService azureMapsService, ILogger<Geoloca
 
             if (response.Value?.IsoCode != null)
             {
-                var country = helper.GetCountryByCode(response.Value.IsoCode);
+                var country = _countryHelper.GetCountryByCode(response.Value.IsoCode);
                 
                 return new GeolocationResult
                 {

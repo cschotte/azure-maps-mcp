@@ -3,7 +3,6 @@
 
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Azure.Functions.Worker.Extensions.Mcp;
-using Microsoft.Extensions.Logging;
 using Azure.Core.GeoJson;
 using Azure.Maps.Mcp.Services;
 using Azure.Maps.Mcp.Common;
@@ -98,21 +97,9 @@ public class RenderTool(IAzureMapsService azureMapsService)
         try
         {
             // Parse and validate bounding box
-            Dictionary<string, double>? bbox;
-            try
-            {
-                bbox = JsonSerializer.Deserialize<Dictionary<string, double>>(boundingBox);
-            }
-            catch (JsonException)
-            {
-                return ResponseHelper.CreateErrorResponse("Invalid bounding box JSON format");
-            }
-            
-            if (bbox == null || !bbox.ContainsKey("west") || !bbox.ContainsKey("south") || 
-                !bbox.ContainsKey("east") || !bbox.ContainsKey("north"))
-            {
-                return ResponseHelper.CreateErrorResponse("Bounding box must contain 'west', 'south', 'east', and 'north' properties");
-            }
+            if (!TryParseBoundingBox(boundingBox, out var parsedBbox, out var bboxError))
+                return ResponseHelper.CreateErrorResponse(bboxError!);
+            var geoBoundingBox = parsedBbox!;
 
             // Validate parameters
             var zoomValidation = ValidationHelper.ValidateRange(zoomLevel, 1, 20, "zoom level");
@@ -127,49 +114,40 @@ public class RenderTool(IAzureMapsService azureMapsService)
             if (!heightValidation.IsValid)
                 return ResponseHelper.CreateErrorResponse(heightValidation.ErrorMessage!);
 
-            var validStyles = new[] { "road", "satellite", "hybrid" };
-            if (!validStyles.Contains(mapStyle.ToLower()))
+            var validStyles = new HashSet<string>(new[] { "road", "satellite", "hybrid" }, StringComparer.OrdinalIgnoreCase);
+            if (!validStyles.Contains(mapStyle))
                 return ResponseHelper.CreateErrorResponse($"Map style must be one of: {string.Join(", ", validStyles)}");
-
-            var geoBoundingBox = new GeoBoundingBox(bbox["west"], bbox["south"], bbox["east"], bbox["north"]);
             
             var pushpinStyles = new List<ImagePushpinStyle>();
             var pathStyles = new List<ImagePathStyle>();
 
             // Process markers if provided
-            if (markers != null && markers.Length > 0)
+            if (markers?.Length > 0)
             {
-                var pushpinPositions = new List<PushpinPosition>();
-                foreach (var marker in markers)
-                {
-                    var label = marker.Label ?? "";
-                    pushpinPositions.Add(new PushpinPosition(marker.Longitude, marker.Latitude, label));
-                }
-                
-                if (pushpinPositions.Any())
-                {
-                    var pushpinStyle = new ImagePushpinStyle(pushpinPositions)
+                var pushpinPositions = markers
+                    .Select(m => new PushpinPosition(m.Longitude, m.Latitude, m.Label ?? string.Empty))
+                    .ToList();
+
+                if (pushpinPositions.Count > 0)
+                    pushpinStyles.Add(new ImagePushpinStyle(pushpinPositions)
                     {
                         PushpinScaleRatio = 1.0,
                         LabelScaleRatio = 18
-                    };
-                    pushpinStyles.Add(pushpinStyle);
-                }
+                    });
             }
 
             // Process paths if provided
-            if (paths != null && paths.Length > 0)
+            if (paths?.Length > 0)
             {
                 foreach (var path in paths)
                 {
-                    if (path.Coordinates != null && path.Coordinates.Length >= 2)
+                    if (path.Coordinates is { Length: >= 2 })
                     {
                         var geoPositions = path.Coordinates.Select(c => new GeoPosition(c.Longitude, c.Latitude)).ToList();
-                        var pathStyle = new ImagePathStyle(geoPositions)
+                        pathStyles.Add(new ImagePathStyle(geoPositions)
                         {
                             LineWidthInPixels = path.Width
-                        };
-                        pathStyles.Add(pathStyle);
+                        });
                     }
                 }
             }
@@ -211,6 +189,32 @@ public class RenderTool(IAzureMapsService azureMapsService)
         catch (Exception)
         {
             return ResponseHelper.CreateErrorResponse("Failed to generate static map image");
+        }
+    }
+
+    private static bool TryParseBoundingBox(string json, out GeoBoundingBox? bbox, out string? error)
+    {
+        bbox = null;
+        error = null;
+        try
+        {
+            var dict = JsonSerializer.Deserialize<Dictionary<string, double>>(json);
+            if (dict == null || !dict.TryGetValue("west", out var west) ||
+                !dict.TryGetValue("south", out var south) ||
+                !dict.TryGetValue("east", out var east) ||
+                !dict.TryGetValue("north", out var north))
+            {
+                error = "Bounding box must contain 'west', 'south', 'east', and 'north' properties";
+                return false;
+            }
+
+            bbox = new GeoBoundingBox(west, south, east, north);
+            return true;
+        }
+        catch (JsonException)
+        {
+            error = "Invalid bounding box JSON format";
+            return false;
         }
     }
 }

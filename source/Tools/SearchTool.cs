@@ -21,6 +21,20 @@ public class SearchTool(IAzureMapsService azureMapsService, ILogger<SearchTool> 
 {
     private readonly MapsSearchClient _searchClient = azureMapsService.SearchClient;
     private readonly CountryHelper _countryHelper = new();
+    private static readonly Dictionary<string, BoundaryResultTypeEnum> ResultTypes = new(StringComparer.OrdinalIgnoreCase)
+    {
+        { "locality", BoundaryResultTypeEnum.Locality },
+        { "postalcode", BoundaryResultTypeEnum.PostalCode },
+        { "admindistrict", BoundaryResultTypeEnum.AdminDistrict },
+        { "countryregion", BoundaryResultTypeEnum.CountryRegion }
+    };
+
+    private static readonly Dictionary<string, ResolutionEnum> Resolutions = new(StringComparer.OrdinalIgnoreCase)
+    {
+        { "small", ResolutionEnum.Small },
+        { "medium", ResolutionEnum.Medium },
+        { "large", ResolutionEnum.Large }
+    };
 
     /// <summary>
     /// Converts an address or place name to geographic coordinates
@@ -107,159 +121,6 @@ public class SearchTool(IAzureMapsService azureMapsService, ILogger<SearchTool> 
     }
 
     /// <summary>
-    /// Validate geocoding input parameters
-    /// </summary>
-    private static string? ValidateGeocodingInput(string? address, ref int maxResults)
-    {
-        if (string.IsNullOrWhiteSpace(address))
-        {
-            return "Address is required";
-        }
-
-        var trimmedAddress = address.Trim();
-        if (trimmedAddress.Length < 2)
-        {
-            return "Address must be at least 2 characters long";
-        }
-
-        if (trimmedAddress.Length > 2048)
-        {
-            return "Address is too long (maximum 2048 characters)";
-        }
-
-        // Normalize maxResults to valid range
-        maxResults = Math.Max(1, Math.Min(20, maxResults));
-        return null;
-    }
-
-    /// <summary>
-    /// Calculate address completeness percentage
-    /// </summary>
-    private static int CalculateAddressCompleteness(Azure.Maps.Search.Models.Address? address)
-    {
-        if (address == null) return 0;
-
-        var components = new string?[]
-        {
-            address.StreetNumber,
-            address.StreetName,
-            address.Locality,
-            address.PostalCode,
-            address.CountryRegion?.ToString()
-        };
-
-        var presentComponents = components.Count(c => !string.IsNullOrWhiteSpace(c));
-        return (presentComponents * 100) / components.Length;
-    }
-
-    /// <summary>
-    /// Determine the type of location from geocoding result
-    /// </summary>
-    private static string DetermineLocationType(Azure.Maps.Search.Models.Address? address, 
-        IReadOnlyList<Azure.Maps.Search.Models.MatchCodesEnum>? matchCodes)
-    {
-        if (!string.IsNullOrWhiteSpace(address?.StreetNumber) && !string.IsNullOrWhiteSpace(address?.StreetName))
-            return "Street Address";
-        
-        if (!string.IsNullOrWhiteSpace(address?.StreetName))
-            return "Street";
-        
-        if (matchCodes?.Any(mc => mc.ToString().Contains("POI")) == true)
-            return "Point of Interest";
-        
-        if (!string.IsNullOrWhiteSpace(address?.Locality))
-            return "City/Locality";
-        
-        if (!string.IsNullOrWhiteSpace(address?.PostalCode))
-            return "Postal Code Area";
-        
-        return "Geographic Location";
-    }
-
-    /// <summary>
-    /// Determine the type of geocoding query for insights
-    /// </summary>
-    private static string DetermineGeocodingQueryType(string query)
-    {
-        var lowerQuery = query.ToLowerInvariant();
-        
-        if (System.Text.RegularExpressions.Regex.IsMatch(query, @"^\d+\s+[\w\s]+"))
-            return "Street Address";
-        
-        if (lowerQuery.Contains("street") || lowerQuery.Contains("avenue") || lowerQuery.Contains("road") || 
-            lowerQuery.Contains("boulevard") || lowerQuery.Contains("drive"))
-            return "Street-based";
-        
-        if (System.Text.RegularExpressions.Regex.IsMatch(query, @"\d{5}"))
-            return "Postal Code Included";
-        
-        if (lowerQuery.Contains("tower") || lowerQuery.Contains("building") || lowerQuery.Contains("center") ||
-            lowerQuery.Contains("mall") || lowerQuery.Contains("park"))
-            return "Landmark/POI";
-        
-        return "General Location";
-    }
-
-    /// <summary>
-    /// Assess overall quality of the geocoding result
-    /// </summary>
-    private static string AssessOverallQuality(dynamic result)
-    {
-        var confidence = result.QualityMetrics.Confidence.ToString();
-        var completeness = (int)result.QualityMetrics.AddressCompleteness;
-        
-        if (confidence == "High" && completeness >= 80)
-            return "Excellent";
-        
-        if (confidence == "High" || completeness >= 60)
-            return "Good";
-        
-        if (confidence == "Medium" || completeness >= 40)
-            return "Fair";
-        
-        return "Limited";
-    }
-
-    /// <summary>
-    /// Generate helpful hints for failed geocoding searches
-    /// </summary>
-    private static object GenerateGeocodingSearchHints(string address)
-    {
-        var hints = new List<string>();
-        
-        if (address.Length < 5)
-        {
-            hints.Add("Try providing a more complete address");
-        }
-        
-        if (!address.Any(char.IsDigit))
-        {
-            hints.Add("Include street numbers or postal codes for better accuracy");
-        }
-        
-        if (!address.Contains(","))
-        {
-            hints.Add("Try adding city, state, or country information separated by commas");
-        }
-        
-        hints.Add("Verify spelling of street names and city names");
-        hints.Add("Try searching for nearby landmarks or points of interest");
-        
-        return new
-        {
-            NoResultsFound = true,
-            Suggestions = hints,
-            ExampleFormats = new[]
-            {
-                "123 Main Street, City, State",
-                "Landmark Name, City",
-                "Street Name, City, Country",
-                "Postal Code, Country"
-            }
-        };
-    }
-
-    /// <summary>
     /// Calculate string similarity using simple character-based comparison
     /// </summary>
     private static double CalculateStringSimilarity(string str1, string str2)
@@ -297,119 +158,7 @@ public class SearchTool(IAzureMapsService azureMapsService, ILogger<SearchTool> 
         return matrix[s1.Length, s2.Length];
     }
 
-    /// <summary>
-    /// <summary>
-    /// Build comprehensive geocoding response
-    /// </summary>
-    private static object BuildGeocodingResponse(string originalQuery, List<object> results, int maxResults)
-    {
-        return new
-        {
-            Query = new
-            {
-                OriginalAddress = originalQuery,
-                MaxResults = maxResults,
-                ProcessedAt = DateTime.UtcNow
-            },
-            Summary = new
-            {
-                TotalResults = results.Count,
-                HasMultipleResults = results.Count > 1,
-                ResultsLimited = results.Count == maxResults,
-                BestResultQuality = results.Count > 0 
-                    ? results.Cast<dynamic>().Max(r => (int)r.QualityMetrics.QualityScore)
-                    : 0
-            },
-            Results = results,
-            SearchInsights = new
-            {
-                QueryType = DetermineQueryType(originalQuery),
-                RecommendedResultIndex = 1, // Typically the first result is best
-                QualityAssessment = results.Count > 0 
-                    ? AssessOverallQuality(results.Cast<dynamic>().First().QualityMetrics.QualityScore)
-                    : "No Results"
-            }
-        };
-    }
 
-    /// <summary>
-    /// Determine the type of geocoding query
-    /// </summary>
-    private static string DetermineQueryType(string query)
-    {
-        var lowerQuery = query.ToLowerInvariant();
-        
-        if (System.Text.RegularExpressions.Regex.IsMatch(query, @"^\d+\s+[\w\s]+"))
-            return "Street Address";
-        
-        if (lowerQuery.Contains("street") || lowerQuery.Contains("avenue") || lowerQuery.Contains("road") || 
-            lowerQuery.Contains("boulevard") || lowerQuery.Contains("drive"))
-            return "Street-based";
-        
-        if (System.Text.RegularExpressions.Regex.IsMatch(query, @"\d{5}"))
-            return "Postal Code Included";
-        
-        if (lowerQuery.Contains("tower") || lowerQuery.Contains("building") || lowerQuery.Contains("center") ||
-            lowerQuery.Contains("mall") || lowerQuery.Contains("park"))
-            return "Landmark/POI";
-        
-        return "General Location";
-    }
-
-    /// <summary>
-    /// Assess overall quality of the geocoding result
-    /// </summary>
-    private static string AssessOverallQuality(int qualityScore)
-    {
-        return qualityScore switch
-        {
-            >= 90 => "Excellent",
-            >= 80 => "Very Good",
-            >= 70 => "Good",
-            >= 60 => "Fair",
-            >= 50 => "Moderate",
-            _ => "Low"
-        };
-    }
-
-    /// <summary>
-    /// Generate helpful hints for geocoding searches
-    /// </summary>
-    private static object GenerateGeocodingHints(string address)
-    {
-        var hints = new List<string>();
-        
-        if (address.Length < 5)
-        {
-            hints.Add("Try providing a more complete address");
-        }
-        
-        if (!address.Any(char.IsDigit))
-        {
-            hints.Add("Include street numbers or postal codes for better accuracy");
-        }
-        
-        if (!address.Contains(","))
-        {
-            hints.Add("Try adding city, state, or country information separated by commas");
-        }
-        
-        hints.Add("Verify spelling of street names and city names");
-        hints.Add("Try searching for nearby landmarks or points of interest");
-        
-        return new
-        {
-            NoResultsFound = true,
-            Suggestions = hints,
-            ExampleFormats = new[]
-            {
-                "123 Main Street, City, State",
-                "Landmark Name, City",
-                "Street Name, City, Country",
-                "Postal Code, Country"
-            }
-        };
-    }
 
     /// <summary>
     /// Converts geographic coordinates to a street address
@@ -508,42 +257,21 @@ public class SearchTool(IAzureMapsService azureMapsService, ILogger<SearchTool> 
     {
         try
         {
-            if (latitude < -90 || latitude > 90)
-            {
-                return JsonSerializer.Serialize(new { error = "Latitude must be between -90 and 90 degrees" });
-            }
-
-            if (longitude < -180 || longitude > 180)
-            {
-                return JsonSerializer.Serialize(new { error = "Longitude must be between -180 and 180 degrees" });
-            }
+            var coordValidation = ValidationHelper.ValidateCoordinates(latitude, longitude);
+            if (!coordValidation.IsValid)
+                return JsonSerializer.Serialize(new { error = coordValidation.ErrorMessage });
 
             // Validate result type options
-            var validResultTypes = new Dictionary<string, BoundaryResultTypeEnum>(StringComparer.OrdinalIgnoreCase)
+            if (!ResultTypes.TryGetValue(resultType, out var resultTypeEnum))
             {
-                { "locality", BoundaryResultTypeEnum.Locality },
-                { "postalcode", BoundaryResultTypeEnum.PostalCode },
-                { "admindistrict", BoundaryResultTypeEnum.AdminDistrict },
-                { "countryregion", BoundaryResultTypeEnum.CountryRegion }
-            };
-
-            if (!validResultTypes.TryGetValue(resultType, out var resultTypeEnum))
-            {
-                var validOptions = string.Join(", ", validResultTypes.Keys);
+                var validOptions = string.Join(", ", ResultTypes.Keys);
                 return JsonSerializer.Serialize(new { error = $"Invalid result type '{resultType}'. Valid options: {validOptions}" });
             }
 
             // Validate resolution options
-            var validResolutions = new Dictionary<string, ResolutionEnum>(StringComparer.OrdinalIgnoreCase)
+            if (!Resolutions.TryGetValue(resolution, out var resolutionEnum))
             {
-                { "small", ResolutionEnum.Small },
-                { "medium", ResolutionEnum.Medium },
-                { "large", ResolutionEnum.Large }
-            };
-
-            if (!validResolutions.TryGetValue(resolution, out var resolutionEnum))
-            {
-                var validOptions = string.Join(", ", validResolutions.Keys);
+                var validOptions = string.Join(", ", Resolutions.Keys);
                 return JsonSerializer.Serialize(new { error = $"Invalid resolution '{resolution}'. Valid options: {validOptions}" });
             }
 
