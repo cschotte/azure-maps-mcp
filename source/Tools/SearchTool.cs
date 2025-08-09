@@ -37,23 +37,23 @@ public class SearchTool(IAzureMapsService azureMapsService, ILogger<SearchTool> 
     };
 
     /// <summary>
-    /// Converts an address or place name to geographic coordinates
+    /// Converts an address or place name to geographic coordinates with enhanced AI-friendly features
     /// </summary>
     [Function(nameof(Geocoding))]
     public async Task<string> Geocoding(
         [McpToolTrigger(
             "search_geocoding",
-            "Forward geocode address or place to coordinates."
+            "🎯 LOCATION FINDER: Convert any address, landmark, or place name into precise GPS coordinates. Essential for location-based queries, mapping applications, and geographic analysis. Use when users mention places that need to be mapped or when you need coordinates for routing/visualization. Supports worldwide locations including street addresses, cities, landmarks, businesses, airports, universities, and tourist attractions. Returns coordinates with confidence scores and detailed address components. BEST FOR: travel planning, business directories, address validation, location-based recommendations. OPTIMIZATION TIP: More specific addresses (with city/state/country) yield better results."
         )] ToolInvocationContext context,
         [McpToolProperty(
             "address",
             "string",
-            "Free-text address or POI."
+            "📍 LOCATION QUERY: The address, place name, or point of interest to find coordinates for. EXAMPLES: 'Eiffel Tower Paris', '123 Main Street Seattle WA', 'JFK Airport NYC', 'Tokyo Japan', 'Stanford University California'. QUALITY TIPS: Include city/state/country for best results, use official names for landmarks, add context for common names (e.g., 'Springfield Illinois' vs 'Springfield'). Supports worldwide coverage with local language support."
         )] string address,
         [McpToolProperty(
             "maxResults",
             "number",
-            "1..20 (default 5)"
+            "🔢 RESULT LIMIT: Maximum number of location matches to return (1-20, default: 5). USE CASES: 1 = single best match needed, 3-5 = typical queries with some ambiguity, 10-20 = highly ambiguous locations needing multiple options. Higher values provide more choices but may include less relevant results."
         )] int maxResults = 5
     )
     {
@@ -77,39 +77,129 @@ public class SearchTool(IAzureMapsService azureMapsService, ILogger<SearchTool> 
             {
                 var items = response.Value.Features.Select(f => new
                 {
-                    addr = f.Properties.Address?.FormattedAddress,
-                    lat = f.Geometry.Coordinates[1],
-                    lon = f.Geometry.Coordinates[0],
-                    comp = new
+                    address = f.Properties.Address?.FormattedAddress,
+                    coordinates = new 
                     {
-                        no = f.Properties.Address?.StreetNumber,
-                        street = f.Properties.Address?.StreetName,
-                        city = f.Properties.Address?.Locality,
-                        zip = f.Properties.Address?.PostalCode,
-                        country = f.Properties.Address?.CountryRegion?.Name,
-                        iso = f.Properties.Address?.CountryRegion?.Iso
+                        latitude = f.Geometry.Coordinates[1],
+                        longitude = f.Geometry.Coordinates[0]
                     },
-                    conf = f.Properties.Confidence.ToString()
+                    components = new
+                    {
+                        streetNumber = f.Properties.Address?.StreetNumber,
+                        streetName = f.Properties.Address?.StreetName,
+                        locality = f.Properties.Address?.Locality,
+                        postalCode = f.Properties.Address?.PostalCode,
+                        country = f.Properties.Address?.CountryRegion?.Name,
+                        countryCode = f.Properties.Address?.CountryRegion?.Iso
+                    },
+                    confidence = f.Properties.Confidence.ToString(),
+                    locationType = DetermineLocationType(f.Properties.Address),
+                    qualityScore = CalculateQualityScore(f.Properties.Confidence, f.Properties.Address?.FormattedAddress),
+                    usageHints = GenerateLocationUsageHints(f.Geometry.Coordinates[1], f.Geometry.Coordinates[0])
                 }).ToList();
 
-                var result = new { q = normalizedAddress, n = items.Count, items };
+                var aiOptimizedResult = new 
+                { 
+                    success = true,
+                    tool = "search_geocoding",
+                    timestamp = DateTime.UtcNow.ToString("O"),
+                    query = new
+                    {
+                        original = normalizedAddress,
+                        normalized = normalizedAddress,
+                        quality = AnalyzeQueryQuality(normalizedAddress)
+                    },
+                    summary = new
+                    {
+                        totalResults = items.Count,
+                        bestConfidence = items.Any() ? items.Max(i => ParseConfidence(i.confidence ?? "low")) : 0.0,
+                        qualityRating = items.Count > 0 ? "EXCELLENT" : "NO_RESULTS"
+                    },
+                    locations = items,
+                    aiContext = new
+                    {
+                        toolCategory = "LOCATION_SEARCH",
+                        nextSuggestedActions = new[]
+                        {
+                            "Use coordinates for routing or map visualization",
+                            "Validate address components for data quality",
+                            "Consider reverse geocoding for context verification"
+                        },
+                        optimizationTips = GenerateOptimizationTips(normalizedAddress, items.Count)
+                    }
+                };
+
                 logger.LogInformation("Geocode ok: {Count} results", items.Count);
-                return JsonSerializer.Serialize(new { ok = true, result }, new JsonSerializerOptions { WriteIndented = false });
+                return JsonSerializer.Serialize(aiOptimizedResult, new JsonSerializerOptions { WriteIndented = false });
             }
 
-            // No results found
-            var suggestions = new List<string>
+            // No results found - AI-optimized error response
+            var noResultsResponse = new
             {
-                "Try a more complete address with city and state/country",
-                "Check spelling of street names and city names"
+                success = false,
+                tool = "search_geocoding",
+                timestamp = DateTime.UtcNow.ToString("O"),
+                error = new
+                {
+                    type = "NO_RESULTS",
+                    message = $"No locations found for '{normalizedAddress}'",
+                    query = normalizedAddress,
+                    recovery = new
+                    {
+                        immediateActions = new[] 
+                        { 
+                            "Try adding city, state, or country context",
+                            "Check spelling and formatting",
+                            "Use more specific location identifiers"
+                        },
+                        commonCauses = new[] 
+                        { 
+                            "Location doesn't exist or is not indexed",
+                            "Query too vague or ambiguous", 
+                            "Spelling errors in place names"
+                        },
+                        examples = new[]
+                        {
+                            "Instead of 'main street' try 'Main Street, Seattle, WA'",
+                            "Instead of 'paris' try 'Paris, France' or 'Paris, Texas'",
+                            "Use landmarks: 'Eiffel Tower' or postal codes"
+                        }
+                    },
+                    alternatives = new[]
+                    {
+                        "Try reverse geocoding if you have coordinates",
+                        "Use polygon search for administrative boundaries", 
+                        "Search for nearby landmarks or major cities first"
+                    }
+                }
             };
             
-            return JsonSerializer.Serialize(new { ok = false, err = "no_results", tips = suggestions });
+            return JsonSerializer.Serialize(noResultsResponse, new JsonSerializerOptions { WriteIndented = false });
         }
         catch (Exception ex)
         {
             logger.LogError(ex, "Error during geocoding for address: {Address}", address);
-            return ResponseHelper.CreateErrorResponse("Geocoding error occurred");
+            
+            var errorResponse = new
+            {
+                success = false,
+                tool = "search_geocoding",
+                timestamp = DateTime.UtcNow.ToString("O"),
+                error = new
+                {
+                    type = "API_ERROR",
+                    message = "Geocoding service encountered an error",
+                    query = address,
+                    recovery = new
+                    {
+                        immediateActions = new[] { "Retry the request", "Check service status", "Verify input parameters" },
+                        commonCauses = new[] { "Temporary service issue", "Network connectivity", "Invalid parameters" },
+                        examples = "Wait a moment and retry, or check Azure Maps service health"
+                    }
+                }
+            };
+            
+            return JsonSerializer.Serialize(errorResponse, new JsonSerializerOptions { WriteIndented = false });
         }
     }
 
@@ -118,23 +208,23 @@ public class SearchTool(IAzureMapsService azureMapsService, ILogger<SearchTool> 
 
 
     /// <summary>
-    /// Converts geographic coordinates to a street address
+    /// Converts geographic coordinates back to a human-readable address (reverse geocoding)
     /// </summary>
     [Function(nameof(ReverseGeocoding))]
     public async Task<string> ReverseGeocoding(
         [McpToolTrigger(
             "search_geocoding_reverse",
-            "Reverse geocode coordinates to address."
+            "🗺️ COORDINATE IDENTIFIER: Convert GPS coordinates (latitude, longitude) into detailed human-readable addresses and location information. Essential for processing location data from GPS devices, map clicks, user check-ins, or any coordinate pairs. Returns comprehensive address details, administrative boundaries, and location context. USE WHEN: you have latitude/longitude coordinates but need to know 'what place is this?' Perfect for GPS data processing, location identification, address completion, and geographic context discovery."
         )] ToolInvocationContext context,
         [McpToolProperty(
             "latitude",
-            "string",
-            "number: -90..90"
+            "number",
+            "🌐 LATITUDE: Decimal degrees coordinate (-90 to 90). Positive values = North of equator, Negative values = South of equator. EXAMPLES: 47.6062 (Seattle, WA), 48.8566 (Paris, France), -33.8688 (Sydney, Australia). PRECISION: More decimal places = higher accuracy (6 decimals ≈ 0.1 meter precision)."
         )] double latitude,
         [McpToolProperty(
             "longitude",
-            "string",
-            "number: -180..180"
+            "number",
+            "🌐 LONGITUDE: Decimal degrees coordinate (-180 to 180). Positive values = East of Prime Meridian, Negative values = West of Prime Meridian. EXAMPLES: -122.3321 (Seattle, WA), 2.3522 (Paris, France), 151.2093 (Sydney, Australia). PRECISION: More decimal places = higher location accuracy."
         )] double longitude
     )
     {
@@ -153,32 +243,121 @@ public class SearchTool(IAzureMapsService azureMapsService, ILogger<SearchTool> 
             if (response.Value?.Features?.Any() == true)
             {
                 var f = response.Value.Features.First();
-                var result = new
+                var address = f.Properties.Address;
+                
+                var aiOptimizedResult = new
                 {
-                    addr = f.Properties.Address?.FormattedAddress,
-                    comp = new
+                    success = true,
+                    tool = "search_geocoding_reverse",
+                    timestamp = DateTime.UtcNow.ToString("O"),
+                    query = new
                     {
-                        no = f.Properties.Address?.StreetNumber,
-                        street = f.Properties.Address?.StreetName,
-                        zip = f.Properties.Address?.PostalCode,
-                        country = f.Properties.Address?.CountryRegion?.Name,
-                        iso = f.Properties.Address?.CountryRegion?.Iso,
-                        city = f.Properties.Address?.Locality
+                        coordinates = new { latitude, longitude },
+                        precision = ResponseHelper.DeterminePrecisionLevel(latitude, longitude)
                     },
-                    lat = latitude,
-                    lon = longitude
+                    location = new
+                    {
+                        address = new
+                        {
+                            formatted = address?.FormattedAddress,
+                            components = new
+                            {
+                                streetNumber = address?.StreetNumber,
+                                streetName = address?.StreetName,
+                                locality = address?.Locality,
+                                postalCode = address?.PostalCode,
+                                country = address?.CountryRegion?.Name,
+                                countryCode = address?.CountryRegion?.Iso
+                            }
+                        },
+                        coordinates = new { latitude, longitude },
+                        locationType = DetermineLocationType(address),
+                        geographicContext = DetermineGeographicContext(latitude, longitude),
+                        usageHints = GenerateLocationUsageHints(latitude, longitude)
+                    },
+                    aiContext = new
+                    {
+                        toolCategory = "LOCATION_SEARCH",
+                        nextSuggestedActions = new[]
+                        {
+                            "Use address for display or storage",
+                            "Combine with geocoding for validation",
+                            "Extract components for structured data"
+                        },
+                        qualityIndicators = new
+                        {
+                            addressCompleteness = CalculateAddressCompleteness(address),
+                            dataSource = "Azure Maps",
+                            accuracy = "High-precision reverse geocoding"
+                        }
+                    }
                 };
 
                 logger.LogInformation("Reverse geocode ok");
-                return JsonSerializer.Serialize(new { ok = true, result }, new JsonSerializerOptions { WriteIndented = false });
+                return JsonSerializer.Serialize(aiOptimizedResult, new JsonSerializerOptions { WriteIndented = false });
             }
 
-            return JsonSerializer.Serialize(new { ok = false, err = "no_results" });
+            // No results found
+            var noResultsResponse = new
+            {
+                success = false,
+                tool = "search_geocoding_reverse",
+                timestamp = DateTime.UtcNow.ToString("O"),
+                error = new
+                {
+                    type = "NO_RESULTS",
+                    message = $"No address found for coordinates ({latitude}, {longitude})",
+                    coordinates = new { latitude, longitude },
+                    recovery = new
+                    {
+                        immediateActions = new[] 
+                        { 
+                            "Verify coordinates are valid and in populated areas",
+                            "Try nearby coordinates with slight adjustments",
+                            "Check if coordinates are over water or remote areas"
+                        },
+                        commonCauses = new[] 
+                        { 
+                            "Coordinates in unpopulated or remote areas",
+                            "Coordinates over water bodies",
+                            "Very precise coordinates with no nearby addresses"
+                        },
+                        alternatives = new[]
+                        {
+                            "Use forward geocoding to validate locations",
+                            "Try polygon search for administrative boundaries",
+                            "Check if coordinates need different precision level"
+                        }
+                    }
+                }
+            };
+            
+            return JsonSerializer.Serialize(noResultsResponse, new JsonSerializerOptions { WriteIndented = false });
         }
         catch (Exception ex)
         {
             logger.LogError(ex, "Error during reverse geocoding");
-            return ResponseHelper.CreateErrorResponse("Reverse geocoding error occurred");
+            
+            var errorResponse = new
+            {
+                success = false,
+                tool = "search_geocoding_reverse", 
+                timestamp = DateTime.UtcNow.ToString("O"),
+                error = new
+                {
+                    type = "API_ERROR",
+                    message = "Reverse geocoding service encountered an error",
+                    coordinates = new { latitude, longitude },
+                    recovery = new
+                    {
+                        immediateActions = new[] { "Retry the request", "Verify coordinate format", "Check service status" },
+                        commonCauses = new[] { "Temporary service issue", "Invalid coordinate format", "Network connectivity" },
+                        examples = "Ensure coordinates are in decimal degrees format (e.g., 47.6062, -122.3321)"
+                    }
+                }
+            };
+            
+            return JsonSerializer.Serialize(errorResponse, new JsonSerializerOptions { WriteIndented = false });
         }
     }
     
@@ -952,4 +1131,191 @@ public class SearchTool(IAzureMapsService azureMapsService, ILogger<SearchTool> 
 
         return null;
     }
+
+    #region AI-Optimized Helper Methods
+
+    private static string DetermineLocationType(Address? address)
+    {
+        if (address?.StreetNumber != null && address?.StreetName != null)
+            return "STREET_ADDRESS";
+        if (address?.Locality != null && address?.StreetName == null)
+            return "CITY";
+        if (address?.CountryRegion != null && address?.Locality == null)
+            return "COUNTRY";
+        return "LANDMARK";
+    }
+
+    private static double CalculateQualityScore(ConfidenceEnum? confidence, string? formattedAddress)
+    {
+        var baseScore = confidence?.ToString().ToLowerInvariant() switch
+        {
+            "high" => 0.9,
+            "medium" => 0.6,
+            "low" => 0.3,
+            _ => 0.1
+        };
+
+        // Boost score for more complete addresses
+        if (!string.IsNullOrEmpty(formattedAddress))
+        {
+            var parts = formattedAddress.Split(',').Length;
+            baseScore += Math.Min(0.1, parts * 0.02);
+        }
+
+        return Math.Min(1.0, baseScore);
+    }
+
+    private static string[] GenerateLocationUsageHints(double latitude, double longitude)
+    {
+        var hints = new List<string>
+        {
+            "Use coordinates for precise mapping and navigation",
+            "Suitable for location-based services and routing"
+        };
+
+        var precision = ResponseHelper.DeterminePrecisionLevel(latitude, longitude);
+        hints.Add($"Precision level: {precision}");
+
+        if (Math.Abs(latitude) > 60)
+        {
+            hints.Add("High latitude location - consider seasonal accessibility");
+        }
+
+        hints.Add("Combine with routing tools for navigation planning");
+        return hints.ToArray();
+    }
+
+    private static object AnalyzeQueryQuality(string query)
+    {
+        var hasCommas = query.Contains(',');
+        var hasNumbers = query.Any(char.IsDigit);
+        var wordCount = query.Split(' ', StringSplitOptions.RemoveEmptyEntries).Length;
+
+        var qualityScore = 0.5; // Base score
+        if (hasCommas) qualityScore += 0.2;
+        if (hasNumbers) qualityScore += 0.1;
+        if (wordCount > 2) qualityScore += 0.2;
+
+        return new
+        {
+            score = Math.Min(1.0, qualityScore),
+            rating = qualityScore switch
+            {
+                >= 0.8 => "EXCELLENT",
+                >= 0.6 => "GOOD", 
+                >= 0.4 => "FAIR",
+                _ => "POOR"
+            },
+            suggestions = GenerateQuerySuggestions(query, hasCommas, wordCount)
+        };
+    }
+
+    private static double ParseConfidence(string confidence)
+    {
+        return confidence.ToLowerInvariant() switch
+        {
+            "high" => 0.9,
+            "medium" => 0.6,
+            "low" => 0.3,
+            _ => 0.1
+        };
+    }
+
+    private static string[] GenerateOptimizationTips(string query, int resultCount)
+    {
+        var tips = new List<string>();
+
+        if (resultCount == 0)
+        {
+            tips.Add("Try adding city, state, or country context");
+            tips.Add("Check spelling and use common abbreviations");
+            tips.Add("Consider using landmark names or postal codes");
+        }
+        else if (resultCount == 1)
+        {
+            tips.Add("Excellent! Single high-confidence match found");
+            tips.Add("Use coordinates for routing or further analysis");
+        }
+        else if (resultCount > 10)
+        {
+            tips.Add("Many results found - consider being more specific");
+            tips.Add("Add geographic context to narrow results");
+        }
+        else
+        {
+            tips.Add("Good results found - review confidence scores");
+            tips.Add("Select best match based on your use case");
+        }
+
+        return tips.ToArray();
+    }
+
+    private static string[] GenerateQuerySuggestions(string query, bool hasCommas, int wordCount)
+    {
+        var suggestions = new List<string>();
+
+        if (!hasCommas && wordCount > 1)
+        {
+            suggestions.Add("Separate location parts with commas for better accuracy");
+        }
+
+        if (wordCount == 1)
+        {
+            suggestions.Add("Add city, state, or country for better results");
+        }
+
+        if (!query.Any(char.IsDigit) && wordCount > 2)
+        {
+            suggestions.Add("Include street numbers if searching for addresses");
+        }
+
+        return suggestions.ToArray();
+    }
+
+    private static string DetermineGeographicContext(double latitude, double longitude)
+    {
+        var context = new List<string>();
+
+        // Hemisphere information
+        context.Add(latitude >= 0 ? "Northern Hemisphere" : "Southern Hemisphere");
+        context.Add(longitude >= 0 ? "Eastern Hemisphere" : "Western Hemisphere");
+
+        // Rough geographic regions
+        if (Math.Abs(latitude) < 23.5)
+        {
+            context.Add("Tropical Zone");
+        }
+        else if (Math.Abs(latitude) < 66.5)
+        {
+            context.Add("Temperate Zone");
+        }
+        else
+        {
+            context.Add("Polar Zone");
+        }
+
+        return string.Join(", ", context);
+    }
+
+    private static string CalculateAddressCompleteness(Address? address)
+    {
+        if (address == null) return "MINIMAL";
+
+        var score = 0;
+        if (!string.IsNullOrEmpty(address.StreetNumber)) score++;
+        if (!string.IsNullOrEmpty(address.StreetName)) score++;
+        if (!string.IsNullOrEmpty(address.Locality)) score++;
+        if (!string.IsNullOrEmpty(address.PostalCode)) score++;
+        if (!string.IsNullOrEmpty(address.CountryRegion?.Name)) score++;
+
+        return score switch
+        {
+            >= 4 => "COMPLETE",
+            >= 3 => "GOOD",
+            >= 2 => "PARTIAL",
+            _ => "MINIMAL"
+        };
+    }
+
+    #endregion
 }

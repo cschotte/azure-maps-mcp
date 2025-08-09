@@ -10,6 +10,7 @@ using Azure.Maps.Geolocation;
 using Azure;
 using System.Net;
 using CountryData.Standard;
+using System.Text.Json;
 
 namespace Azure.Maps.Mcp.Tools;
 
@@ -22,18 +23,18 @@ public class GeolocationTool(IAzureMapsService azureMapsService, ILogger<Geoloca
     private readonly CountryHelper _countryHelper = new();
 
     /// <summary>
-    /// Get country code and location information for an IP address
+    /// Get country code and location information for an IP address with enhanced context
     /// </summary>
     [Function(nameof(GetCountryCodeByIP))]
     public async Task<string> GetCountryCodeByIP(
         [McpToolTrigger(
             "geolocation_ip",
-            "Return ISO country for a public IPv4/IPv6 address."
+            "🌐 IP LOCATION FINDER: Identify the country and geographic location of any public IP address (IPv4 or IPv6). Essential for user location detection, content localization, fraud prevention, and geographic analytics. Uses enterprise-grade IP geolocation databases with high accuracy for country-level identification. BEST FOR: user geographic segmentation, content personalization, security analysis, compliance checking, analytics. PRIVACY NOTE: Only works with public IP addresses, respects privacy by not processing private/internal network IPs."
         )] ToolInvocationContext context,
         [McpToolProperty(
             "ipAddress",
             "string",
-            "IPv4/IPv6. Public only (no private/loopback). Example: 8.8.8.8"
+            "🔍 IP ADDRESS: Public IPv4 or IPv6 address to geolocate. FORMATS: IPv4 (e.g., '8.8.8.8', '1.2.3.4'), IPv6 (e.g., '2001:4860:4860::8888'). REQUIREMENTS: Must be a public internet IP address - private networks (192.168.x.x, 10.x.x.x, 172.16-31.x.x), loopback (127.x.x.x), and local addresses are not supported. EXAMPLES: '8.8.8.8' (Google DNS), '1.1.1.1' (Cloudflare DNS), '208.67.222.222' (OpenDNS)."
         )] string ipAddress
     )
     {
@@ -57,25 +58,108 @@ public class GeolocationTool(IAzureMapsService azureMapsService, ILogger<Geoloca
 
             logger.LogInformation("Processing geolocation request for IP: {IPAddress}", ipAddress);
 
-            // Call Azure Maps API
-            var response = await _geolocationClient.GetCountryCodeAsync(parsedIP);
-            
+        // Call Azure Maps API
+        var response = await _geolocationClient.GetCountryCodeAsync(parsedIP);
+
         if (response?.Value?.IsoCode != null)
+        {
+            var country = _countryHelper.GetCountryByCode(response.Value.IsoCode);
+            
+            if (country != null)
             {
-                var country = _countryHelper.GetCountryByCode(response.Value.IsoCode);
-                
-                if (country != null)
+                var aiOptimizedResult = new
                 {
-            var result = new { code = country.CountryShortCode, name = country.CountryName };
-                    
-                    logger.LogInformation("Successfully retrieved country: {CountryCode} for IP: {IPAddress}", 
-                        country.CountryShortCode, ipAddress);
-                    
-                    return ResponseHelper.CreateSuccessResponse(result);
+                    success = true,
+                    tool = "geolocation_ip",
+                    timestamp = DateTime.UtcNow.ToString("O"),
+                    query = new
+                    {
+                        ipAddress = ipAddress,
+                        ipType = parsedIP.AddressFamily.ToString(),
+                        isPublic = !ValidationHelper.IsPrivateIP(parsedIP) && !IPAddress.IsLoopback(parsedIP)
+                    },
+                    location = new
+                    {
+                        country = new
+                        {
+                            code = country.CountryShortCode,
+                            name = country.CountryName
+                        },
+                        geographicContext = new
+                        {
+                            dataSource = "Azure Maps IP Geolocation Database",
+                            accuracy = "Country-level identification"
+                        }
+                    },
+                    aiContext = new
+                    {
+                        toolCategory = "IP_ANALYSIS",
+                        nextSuggestedActions = new[]
+                        {
+                            "Use country information for content localization",
+                            "Apply region-specific business logic",
+                            "Consider timezone for scheduling and notifications",
+                            "Use for geographic analytics and user segmentation"
+                        },
+                        usageHints = new[]
+                        {
+                            "IP geolocation provides country-level accuracy",
+                            "Not suitable for precise location tracking",
+                            "Respects user privacy by not tracking exact location",
+                            "Best for regional content delivery and compliance"
+                        },
+                        qualityIndicators = new
+                        {
+                            accuracy = "Country-level (high confidence)",
+                            dataSource = "Azure Maps IP Geolocation",
+                            privacyCompliant = true
+                        }
+                    }
+                };
+                
+                logger.LogInformation("Successfully retrieved country: {CountryCode} for IP: {IPAddress}", 
+                    country.CountryShortCode, ipAddress);
+                
+                return JsonSerializer.Serialize(aiOptimizedResult, new JsonSerializerOptions { WriteIndented = false });
+            }
+        }
+
+        // No results found
+        var noResultsResponse = new
+        {
+            success = false,
+            tool = "geolocation_ip",
+            timestamp = DateTime.UtcNow.ToString("O"),
+            error = new
+            {
+                type = "NO_RESULTS",
+                message = "No country data available for this IP address",
+                ipAddress = ipAddress,
+                recovery = new
+                {
+                    immediateActions = new[]
+                    {
+                        "Verify the IP address is correct and public",
+                        "Check if IP is from a known public range",
+                        "Try with a different public IP address"
+                    },
+                    commonCauses = new[]
+                    {
+                        "IP address not in geolocation database",
+                        "Recently allocated IP ranges", 
+                        "Special purpose IP addresses (satellite, military)"
+                    },
+                    alternatives = new[]
+                    {
+                        "Use batch IP geolocation for multiple addresses",
+                        "Validate IP format first",
+                        "Consider fallback to user-provided location"
+                    }
                 }
             }
-
-            return ResponseHelper.CreateErrorResponse("No country data available for this IP address");
+        };
+        
+        return JsonSerializer.Serialize(noResultsResponse, new JsonSerializerOptions { WriteIndented = false });
         }
         catch (RequestFailedException ex)
         {

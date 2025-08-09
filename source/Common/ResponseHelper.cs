@@ -6,12 +6,12 @@ using System.Text.Json;
 namespace Azure.Maps.Mcp.Common;
 
 /// <summary>
-/// Common response builder utilities optimized for AI/LLM consumption
+/// Simple response builder utilities for Azure Maps MCP
 /// </summary>
 public static class ResponseHelper
 {
     /// <summary>
-    /// Creates a simple success response without timing information
+    /// Creates a success response with data
     /// </summary>
     public static string CreateSuccessResponse(object data)
     {
@@ -19,7 +19,7 @@ public static class ResponseHelper
     }
 
     /// <summary>
-    /// Creates a simple error response
+    /// Creates an error response
     /// </summary>
     public static string CreateErrorResponse(string error, object? context = null)
     {
@@ -28,7 +28,7 @@ public static class ResponseHelper
     }
 
     /// <summary>
-    /// Creates a batch response optimized for AI consumption
+    /// Creates a batch response summary
     /// </summary>
     public static object CreateBatchSummary<T>(List<T> successResults, List<object> failedResults, int originalCount)
     {
@@ -44,13 +44,13 @@ public static class ResponseHelper
             Results = new
             {
                 Successful = successResults,
-                Failed = failedResults.Take(5) // Limit failed results to avoid token overflow
+                Failed = failedResults.Take(5) // Limit failed results to avoid overflow
             }
         };
     }
 
     /// <summary>
-    /// Extracts essential location information for AI consumption
+    /// Creates location information
     /// </summary>
     public static object CreateLocationSummary(double latitude, double longitude, object? addressInfo = null)
     {
@@ -62,7 +62,7 @@ public static class ResponseHelper
     }
 
     /// <summary>
-    /// Creates a simplified country information response
+    /// Creates country information
     /// </summary>
     public static object CreateCountryInfo(string countryCode, string countryName, string? continent = null)
     {
@@ -79,15 +79,42 @@ public static class ResponseHelper
     }
 
     /// <summary>
-    /// Creates a simple validation error response with suggestions
+    /// Creates a validation error response
     /// </summary>
     public static string CreateValidationError(string error, List<string>? suggestions = null)
     {
         var response = new Dictionary<string, object> { ["error"] = error };
         
         if (suggestions?.Any() == true)
-            response["suggestions"] = suggestions.Take(3).ToList(); // Limit suggestions
+            response["suggestions"] = suggestions.Take(3).ToList();
 
         return JsonSerializer.Serialize(response, new JsonSerializerOptions { WriteIndented = false });
+    }
+
+    /// <summary>
+    /// Determines the precision level based on coordinate values
+    /// </summary>
+    public static string DeterminePrecisionLevel(double latitude, double longitude)
+    {
+        // Count decimal places to determine precision
+        var latDecimalPlaces = CountDecimalPlaces(latitude);
+        var lonDecimalPlaces = CountDecimalPlaces(longitude);
+        var maxDecimalPlaces = Math.Max(latDecimalPlaces, lonDecimalPlaces);
+
+        return maxDecimalPlaces switch
+        {
+            >= 6 => "very high (meter-level)",
+            >= 4 => "high (10-meter level)",
+            >= 3 => "medium (100-meter level)",
+            >= 2 => "low (kilometer level)",
+            _ => "very low (10+ kilometer level)"
+        };
+    }
+
+    private static int CountDecimalPlaces(double value)
+    {
+        var str = value.ToString("F15").TrimEnd('0');
+        var decimalIndex = str.IndexOf('.');
+        return decimalIndex >= 0 ? str.Length - decimalIndex - 1 : 0;
     }
 }
