@@ -13,9 +13,9 @@ namespace Azure.Maps.Mcp.Tools;
 /// <summary>
 /// Country-related utilities split out to keep other tools small and focused
 /// </summary>
-public class CountryTool(ILogger<CountryTool> logger)
+public class CountryTool(ILogger<CountryTool> logger, CountryHelper countryHelper)
 {
-    private readonly CountryHelper _countryHelper = new();
+    private readonly CountryHelper _countryHelper = countryHelper;
 
     /// <summary>
     /// Get country info by ISO code (alpha-2 or alpha-3)

@@ -19,10 +19,10 @@ namespace Azure.Maps.Mcp.Tools;
 /// <summary>
 /// Azure Maps Routing Tool providing route directions, route matrix, and route range capabilities
 /// </summary>
-public class RoutingTool(IAzureMapsService azureMapsService, ILogger<RoutingTool> logger)
+public class RoutingTool(IAzureMapsService azureMapsService, ILogger<RoutingTool> logger, CountryHelper countryHelper)
 {
     private readonly MapsRoutingClient _routingClient = azureMapsService.RoutingClient;
-    private readonly CountryHelper _countryHelper = new();
+    private readonly CountryHelper _countryHelper = countryHelper;
     
     // Validation centralizes in ValidationHelper
 
@@ -66,7 +66,7 @@ public class RoutingTool(IAzureMapsService azureMapsService, ILogger<RoutingTool
         {
             var coordsValidation = ValidationHelper.ValidateCoordinateArray(coordinates, c => (c.Latitude, c.Longitude), 2);
             if (!coordsValidation.IsValid)
-                return JsonSerializer.Serialize(new { error = coordsValidation.ErrorMessage });
+                return ResponseHelper.CreateErrorResponse(coordsValidation.ErrorMessage!);
 
             var routePoints = coordinates
                 .Select(c => new GeoPosition(c.Longitude, c.Latitude))
@@ -76,22 +76,22 @@ public class RoutingTool(IAzureMapsService azureMapsService, ILogger<RoutingTool
 
             // Validate travel mode options
             var tmParsed = ToolsHelper.ParseTravelMode(travelMode);
-            if (!tmParsed.IsValid) return JsonSerializer.Serialize(new { error = tmParsed.Error });
+            if (!tmParsed.IsValid) return ResponseHelper.CreateErrorResponse(tmParsed.Error!);
             var parsedTravelMode = tmParsed.Value;
 
             // Validate route type options
             var rtParsed = ToolsHelper.ParseRouteType(routeType);
-            if (!rtParsed.IsValid) return JsonSerializer.Serialize(new { error = rtParsed.Error });
+            if (!rtParsed.IsValid) return ResponseHelper.CreateErrorResponse(rtParsed.Error!);
             var parsedRouteType = rtParsed.Value;
 
             // Parse boolean parameters using shared validator
             var avoidTollsParse = ValidationHelper.ValidateBooleanString(avoidTolls, nameof(avoidTolls));
             if (!avoidTollsParse.IsValid)
-                return JsonSerializer.Serialize(new { error = avoidTollsParse.ErrorMessage });
+                return ResponseHelper.CreateErrorResponse(avoidTollsParse.ErrorMessage!);
 
             var avoidHighwaysParse = ValidationHelper.ValidateBooleanString(avoidHighways, nameof(avoidHighways));
             if (!avoidHighwaysParse.IsValid)
-                return JsonSerializer.Serialize(new { error = avoidHighwaysParse.ErrorMessage });
+                return ResponseHelper.CreateErrorResponse(avoidHighwaysParse.ErrorMessage!);
 
             var options = new RouteDirectionOptions()
             {
@@ -163,7 +163,7 @@ public class RoutingTool(IAzureMapsService azureMapsService, ILogger<RoutingTool
         catch (Exception ex)
         {
             logger.LogError(ex, "Unexpected error during route calculation");
-            return JsonSerializer.Serialize(new { error = "An unexpected error occurred" });
+            return ResponseHelper.CreateErrorResponse("An unexpected error occurred");
         }
     }
 
@@ -202,11 +202,11 @@ public class RoutingTool(IAzureMapsService azureMapsService, ILogger<RoutingTool
         {
             var originValidation = ValidationHelper.ValidateCoordinateArray(origins, c => (c.Latitude, c.Longitude), 1);
             if (!originValidation.IsValid)
-                return JsonSerializer.Serialize(new { error = originValidation.ErrorMessage });
+                return ResponseHelper.CreateErrorResponse(originValidation.ErrorMessage!);
 
             var destValidation = ValidationHelper.ValidateCoordinateArray(destinations, c => (c.Latitude, c.Longitude), 1);
             if (!destValidation.IsValid)
-                return JsonSerializer.Serialize(new { error = destValidation.ErrorMessage });
+                return ResponseHelper.CreateErrorResponse(destValidation.ErrorMessage!);
 
             // Convert to GeoPosition lists
             var originPoints = origins.Select(c => new GeoPosition(c.Longitude, c.Latitude)).ToList();
@@ -217,12 +217,12 @@ public class RoutingTool(IAzureMapsService azureMapsService, ILogger<RoutingTool
 
             // Validate travel mode options
             var tmParsed = ToolsHelper.ParseTravelMode(travelMode);
-            if (!tmParsed.IsValid) return JsonSerializer.Serialize(new { error = tmParsed.Error });
+            if (!tmParsed.IsValid) return ResponseHelper.CreateErrorResponse(tmParsed.Error!);
             var parsedTravelMode = tmParsed.Value;
 
             // Validate route type options
             var rtParsed = ToolsHelper.ParseRouteType(routeType);
-            if (!rtParsed.IsValid) return JsonSerializer.Serialize(new { error = rtParsed.Error });
+            if (!rtParsed.IsValid) return ResponseHelper.CreateErrorResponse(rtParsed.Error!);
             var parsedRouteType = rtParsed.Value;
 
             var matrixQuery = new RouteMatrixQuery
@@ -285,11 +285,11 @@ public class RoutingTool(IAzureMapsService azureMapsService, ILogger<RoutingTool
 
                 logger.LogInformation("Route matrix ok: {Ok}/{Total}", okCount, items.Count);
 
-                return JsonSerializer.Serialize(new { ok = true, result }, new JsonSerializerOptions { WriteIndented = false });
+                return ResponseHelper.CreateSuccessResponse(result);
             }
 
             logger.LogWarning("No route matrix data returned");
-            return JsonSerializer.Serialize(new { success = false, message = "No route matrix data returned" });
+            return ResponseHelper.CreateErrorResponse("No route matrix data returned");
         }
         catch (RequestFailedException ex)
         {
@@ -347,28 +347,28 @@ public class RoutingTool(IAzureMapsService azureMapsService, ILogger<RoutingTool
         try
         {
             if (!ToolsHelper.TryCreateGeoPosition(latitude, longitude, out var centerPoint, out var coordError))
-                return JsonSerializer.Serialize(new { error = coordError });
+                return ResponseHelper.CreateErrorResponse(coordError!);
 
             if (!timeBudgetInSeconds.HasValue && !distanceBudgetInMeters.HasValue)
             {
-                return JsonSerializer.Serialize(new { error = "Either timeBudgetInSeconds or distanceBudgetInMeters must be specified" });
+                return ResponseHelper.CreateErrorResponse("Either timeBudgetInSeconds or distanceBudgetInMeters must be specified");
             }
 
             if (timeBudgetInSeconds.HasValue && distanceBudgetInMeters.HasValue)
             {
-                return JsonSerializer.Serialize(new { error = "Specify either timeBudgetInSeconds or distanceBudgetInMeters, not both" });
+                return ResponseHelper.CreateErrorResponse("Specify either timeBudgetInSeconds or distanceBudgetInMeters, not both");
             }
 
             logger.LogInformation("Calculating route range from coordinates: {Latitude}, {Longitude}", latitude, longitude);
 
             // Validate travel mode options
             var tmParsed = ToolsHelper.ParseTravelMode(travelMode);
-            if (!tmParsed.IsValid) return JsonSerializer.Serialize(new { error = tmParsed.Error });
+            if (!tmParsed.IsValid) return ResponseHelper.CreateErrorResponse(tmParsed.Error!);
             var parsedTravelMode = tmParsed.Value;
 
             // Validate route type options
             var rtParsed = ToolsHelper.ParseRouteType(routeType);
-            if (!rtParsed.IsValid) return JsonSerializer.Serialize(new { error = rtParsed.Error });
+            if (!rtParsed.IsValid) return ResponseHelper.CreateErrorResponse(rtParsed.Error!);
             var parsedRouteType = rtParsed.Value;
 
             var options = new RouteRangeOptions(centerPoint)
@@ -400,21 +400,21 @@ public class RoutingTool(IAzureMapsService azureMapsService, ILogger<RoutingTool
                 var result = new { center, budget, mode = travelMode, type = routeType, boundary, n = boundary?.Count ?? 0 };
 
                 logger.LogInformation("Route range ok: {Points} points", result.n);
-                return JsonSerializer.Serialize(new { ok = true, result }, new JsonSerializerOptions { WriteIndented = false });
+                return ResponseHelper.CreateSuccessResponse(result);
             }
 
             logger.LogWarning("No reachable range data returned for coordinates: {Latitude}, {Longitude}", latitude, longitude);
-            return JsonSerializer.Serialize(new { success = false, message = "No reachable range data returned" });
+            return ResponseHelper.CreateErrorResponse("No reachable range data returned");
         }
         catch (RequestFailedException ex)
         {
             logger.LogError(ex, "Azure Maps API error during route range calculation: {Message}", ex.Message);
-            return JsonSerializer.Serialize(new { error = $"API Error: {ex.Message}" });
+            return ResponseHelper.CreateErrorResponse($"API Error: {ex.Message}");
         }
         catch (Exception ex)
         {
             logger.LogError(ex, "Unexpected error during route range calculation");
-            return JsonSerializer.Serialize(new { error = "An unexpected error occurred" });
+            return ResponseHelper.CreateErrorResponse("An unexpected error occurred");
         }
     }
 
@@ -438,7 +438,7 @@ public class RoutingTool(IAzureMapsService azureMapsService, ILogger<RoutingTool
         {
             var coordsValidation = ValidationHelper.ValidateCoordinateArray(coordinates, c => (c.Latitude, c.Longitude), 2);
             if (!coordsValidation.IsValid)
-                return JsonSerializer.Serialize(new { error = coordsValidation.ErrorMessage });
+                return ResponseHelper.CreateErrorResponse(coordsValidation.ErrorMessage!);
 
             var routePoints = coordinates.Select(c => new GeoPosition(c.Longitude, c.Latitude)).ToList();
 
@@ -541,12 +541,12 @@ public class RoutingTool(IAzureMapsService azureMapsService, ILogger<RoutingTool
             };
 
             logger.LogInformation("Completed route country analysis: {Countries} countries detected", countriesFound.Count);
-            return JsonSerializer.Serialize(new { success = true, result }, new JsonSerializerOptions { WriteIndented = false });
+            return ResponseHelper.CreateSuccessResponse(result);
         }
         catch (Exception ex)
         {
             logger.LogError(ex, "Unexpected error during route country analysis");
-            return JsonSerializer.Serialize(new { error = "An unexpected error occurred" });
+            return ResponseHelper.CreateErrorResponse("An unexpected error occurred");
         }
     }
 }

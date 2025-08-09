@@ -211,20 +211,20 @@ public class SearchTool(IAzureMapsService azureMapsService, ILogger<SearchTool> 
         {
             var coordValidation = ValidationHelper.ValidateCoordinates(latitude, longitude);
             if (!coordValidation.IsValid)
-                return JsonSerializer.Serialize(new { error = coordValidation.ErrorMessage });
+                return ResponseHelper.CreateErrorResponse(coordValidation.ErrorMessage!);
 
             // Validate result type options
             if (!ResultTypes.TryGetValue(resultType, out var resultTypeEnum))
             {
                 var validOptions = string.Join(", ", ResultTypes.Keys);
-                return JsonSerializer.Serialize(new { error = $"Invalid result type '{resultType}'. Valid options: {validOptions}" });
+                return ResponseHelper.CreateErrorResponse($"Invalid result type '{resultType}'. Valid options: {validOptions}");
             }
 
             // Validate resolution options
             if (!Resolutions.TryGetValue(resolution, out var resolutionEnum))
             {
                 var validOptions = string.Join(", ", Resolutions.Keys);
-                return JsonSerializer.Serialize(new { error = $"Invalid resolution '{resolution}'. Valid options: {validOptions}" });
+                return ResponseHelper.CreateErrorResponse($"Invalid resolution '{resolution}'. Valid options: {validOptions}");
             }
 
             logger.LogInformation("Getting polygon boundary for coordinates: {Latitude}, {Longitude} with type: {ResultType}", latitude, longitude, resultType);
@@ -284,52 +284,5 @@ public class SearchTool(IAzureMapsService azureMapsService, ILogger<SearchTool> 
     /// Country-specific helpers removed
     /// </summary>
 
-    #region Helper Methods (kept minimal)
-
-    private static string DetermineLocationType(Address? address)
-    {
-        if (address?.StreetNumber != null && address?.StreetName != null)
-            return "STREET_ADDRESS";
-        if (address?.Locality != null && address?.StreetName == null)
-            return "CITY";
-        if (address?.CountryRegion != null && address?.Locality == null)
-            return "COUNTRY";
-        return "LANDMARK";
-    }
-
-    private static double CalculateQualityScore(ConfidenceEnum? confidence, string? formattedAddress)
-    {
-        var baseScore = confidence?.ToString().ToLowerInvariant() switch
-        {
-            "high" => 0.9,
-            "medium" => 0.6,
-            "low" => 0.3,
-            _ => 0.1
-        };
-
-        // Boost score for more complete addresses
-        if (!string.IsNullOrEmpty(formattedAddress))
-        {
-            var parts = formattedAddress.Split(',').Length;
-            baseScore += Math.Min(0.1, parts * 0.02);
-        }
-
-        return Math.Min(1.0, baseScore);
-    }
-
-    // Usage hints removed
-
-    // Query quality scoring removed
-
-    // Confidence parsing removed
-
-    // Optimization tips removed
-
-    // Query suggestions removed
-
-    // Geographic context helpers removed for simplicity
-
-    // Address completeness removed for simplicity
-
-    #endregion
+    // Intentionally minimal: complex scoring/helpers removed to keep tool simple.
 }

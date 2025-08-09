@@ -17,10 +17,10 @@ namespace Azure.Maps.Mcp.Tools;
 /// <summary>
 /// Azure Maps Geolocation Tool providing IP-based geolocation and country code lookup capabilities
 /// </summary>
-public class GeolocationTool(IAzureMapsService azureMapsService, ILogger<GeolocationTool> logger)
+public class GeolocationTool(IAzureMapsService azureMapsService, ILogger<GeolocationTool> logger, CountryHelper countryHelper)
 {
     private readonly MapsGeolocationClient _geolocationClient = azureMapsService.GeolocationClient;
-    private readonly CountryHelper _countryHelper = new();
+    private readonly CountryHelper _countryHelper = countryHelper;
 
     /// <summary>
     /// Get country code and location information for an IP address with enhanced context
@@ -58,26 +58,26 @@ public class GeolocationTool(IAzureMapsService azureMapsService, ILogger<Geoloca
 
             logger.LogInformation("Processing geolocation request for IP: {IPAddress}", ipAddress);
 
-        // Call Azure Maps API
-        var response = await _geolocationClient.GetCountryCodeAsync(parsedIP);
+            // Call Azure Maps API
+            var response = await _geolocationClient.GetCountryCodeAsync(parsedIP);
 
-        if (response?.Value?.IsoCode != null)
-        {
-            var country = _countryHelper.GetCountryByCode(response.Value.IsoCode);
-            
-            if (country != null)
+            if (response?.Value?.IsoCode != null)
             {
-                logger.LogInformation("Country for IP resolved: {Code}", country.CountryShortCode);
-                return ResponseHelper.CreateSuccessResponse(new
-                {
-                    query = new { ipAddress, ipType = parsedIP.AddressFamily.ToString(), isPublic = true },
-                    country = new { code = country.CountryShortCode, name = country.CountryName }
-                });
-            }
-        }
+                var country = _countryHelper.GetCountryByCode(response.Value.IsoCode);
 
-        // No results found
-    return ResponseHelper.CreateErrorResponse("No country data available for this IP address", new { ipAddress });
+                if (country != null)
+                {
+                    logger.LogInformation("Country for IP resolved: {Code}", country.CountryShortCode);
+                    return ResponseHelper.CreateSuccessResponse(new
+                    {
+                        query = new { ipAddress, ipType = parsedIP.AddressFamily.ToString(), isPublic = true },
+                        country = new { code = country.CountryShortCode, name = country.CountryName }
+                    });
+                }
+            }
+
+            // No results found
+            return ResponseHelper.CreateErrorResponse("No country data available for this IP address", new { ipAddress });
         }
         catch (RequestFailedException ex)
         {

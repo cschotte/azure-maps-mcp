@@ -23,7 +23,7 @@ public static class ResponseHelper
     /// </summary>
     public static string CreateErrorResponse(string error, object? context = null)
     {
-        var response = new { error, context };
+    var response = new { success = false, error, context };
         return JsonSerializer.Serialize(response, new JsonSerializerOptions { WriteIndented = false });
     }
 
@@ -83,7 +83,7 @@ public static class ResponseHelper
     /// </summary>
     public static string CreateValidationError(string error, List<string>? suggestions = null)
     {
-        var response = new Dictionary<string, object> { ["error"] = error };
+    var response = new Dictionary<string, object> { ["success"] = false, ["error"] = error };
         
         if (suggestions?.Any() == true)
             response["suggestions"] = suggestions.Take(3).ToList();

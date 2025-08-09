@@ -15,24 +15,14 @@ namespace Azure.Maps.Mcp.Tools;
 /// <summary>
 /// Represents a marker to be placed on the map
 /// </summary>
-public class Marker
-{
-    public LatLon Position { get; set; } = new();
-    public string? Label { get; set; }
-    public string? Color { get; set; }
-}
+public record Marker(LatLon Position, string? Label = null, string? Color = null);
 
 // Replaced by Common.Models.LatLon
 
 /// <summary>
 /// Represents a path to be drawn on the map
 /// </summary>
-public class PathInfo
-{
-    public LatLon[]? Coordinates { get; set; }
-    public string? Color { get; set; }
-    public int Width { get; set; } = 3;
-}
+public record PathInfo(LatLon[]? Coordinates, string? Color = null, int Width = 3);
 
 /// <summary>
 /// Azure Maps Rendering Tool providing map rendering capabilities
