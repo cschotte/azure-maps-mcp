@@ -10,17 +10,11 @@ using Azure.Maps.Routing;
 using System.Text.Json;
 using CountryData.Standard;
 using Azure.Maps.Mcp.Common;
+using Azure.Maps.Mcp.Common.Models;
 
 namespace Azure.Maps.Mcp.Tools;
 
-/// <summary>
-/// Represents a coordinate for routing operations
-/// </summary>
-public class CoordinateInfo
-{
-    public double Latitude { get; set; }
-    public double Longitude { get; set; }
-}
+// Replaced by Common.Models.LatLon
 
 /// <summary>
 /// Azure Maps Routing Tool providing route directions, route matrix, and route range capabilities
@@ -30,11 +24,7 @@ public class RoutingTool(IAzureMapsService azureMapsService, ILogger<RoutingTool
     private readonly MapsRoutingClient _routingClient = azureMapsService.RoutingClient;
     private readonly CountryHelper _countryHelper = new();
     
-    private static bool TryValidateCoordinate(CoordinateInfo coord, out GeoPosition position)
-    {
-        var ok = ToolsHelper.TryCreateGeoPosition(coord.Latitude, coord.Longitude, out position, out _);
-        return ok;
-    }
+    // Validation centralizes in ValidationHelper
 
     /// <summary>
     /// Calculate route directions between coordinates
@@ -49,7 +39,7 @@ public class RoutingTool(IAzureMapsService azureMapsService, ILogger<RoutingTool
             "coordinates",
             "array",
             "Array of {latitude,longitude}. Min 2 points. Example: [{latitude:47.6062,longitude:-122.3321},{latitude:47.6205,longitude:-122.3493}]."
-        )] CoordinateInfo[] coordinates,
+    )] LatLon[] coordinates,
         [McpToolProperty(
             "travelMode",
             "string",
@@ -190,12 +180,12 @@ public class RoutingTool(IAzureMapsService azureMapsService, ILogger<RoutingTool
             "origins",
             "array",
             "Array of {latitude,longitude}."
-        )] CoordinateInfo[] origins,
+    )] LatLon[] origins,
         [McpToolProperty(
             "destinations",
             "array",
             "Array of {latitude,longitude}."
-        )] CoordinateInfo[] destinations,
+    )] LatLon[] destinations,
         [McpToolProperty(
             "travelMode",
             "string",
@@ -441,7 +431,7 @@ public class RoutingTool(IAzureMapsService azureMapsService, ILogger<RoutingTool
             "coordinates",
             "array",
             "Array of {latitude,longitude}. Min 2 points."
-        )] CoordinateInfo[] coordinates
+    )] LatLon[] coordinates
     )
     {
         try

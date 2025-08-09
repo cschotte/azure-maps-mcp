@@ -8,35 +8,28 @@ using Azure.Maps.Mcp.Services;
 using Azure.Maps.Mcp.Common;
 using Azure.Maps.Rendering;
 using System.Text.Json;
+using Azure.Maps.Mcp.Common.Models;
 
 namespace Azure.Maps.Mcp.Tools;
 
 /// <summary>
 /// Represents a marker to be placed on the map
 /// </summary>
-public class MarkerInfo
+public class Marker
 {
-    public double Latitude { get; set; }
-    public double Longitude { get; set; }
+    public LatLon Position { get; set; } = new();
     public string? Label { get; set; }
     public string? Color { get; set; }
 }
 
-/// <summary>
-/// Represents coordinate information for map rendering paths
-/// </summary>
-public class MapCoordinateInfo
-{
-    public double Latitude { get; set; }
-    public double Longitude { get; set; }
-}
+// Replaced by Common.Models.LatLon
 
 /// <summary>
 /// Represents a path to be drawn on the map
 /// </summary>
 public class PathInfo
 {
-    public MapCoordinateInfo[]? Coordinates { get; set; }
+    public LatLon[]? Coordinates { get; set; }
     public string? Color { get; set; }
     public int Width { get; set; } = 3;
 }
@@ -85,8 +78,8 @@ public class RenderTool(IAzureMapsService azureMapsService)
         [McpToolProperty(
             "markers",
             "array",
-            "Optional MarkerInfo[]. Example: [{latitude:47.61,longitude:-122.33,label:'A'}]"
-        )] MarkerInfo[]? markers = null,
+            "Optional Marker[]. Example: [{position:{latitude:47.61,longitude:-122.33},label:'A'}]"
+        )] Marker[]? markers = null,
         [McpToolProperty(
             "paths",
             "array", 
@@ -122,10 +115,10 @@ public class RenderTool(IAzureMapsService azureMapsService)
             var pathStyles = new List<ImagePathStyle>();
 
             // Process markers if provided
-            if (markers?.Length > 0)
+        if (markers?.Length > 0)
             {
                 var pushpinPositions = markers
-                    .Select(m => new PushpinPosition(m.Longitude, m.Latitude, m.Label ?? string.Empty))
+            .Select(m => new PushpinPosition(m.Position.Longitude, m.Position.Latitude, m.Label ?? string.Empty))
                     .ToList();
 
                 if (pushpinPositions.Count > 0)
