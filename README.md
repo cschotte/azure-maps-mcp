@@ -1,76 +1,164 @@
 # Azure Maps MCP Server
 
-A Model Context Protocol (MCP) server implementation that provides **Azure Maps** functionality as tools for Large Language Models (LLMs). This server exposes the full range of Azure Maps services including search, routing, rendering, and geolocation capabilities.
+A Model Context Protocol (MCP) server that exposes common **Azure Maps** capabilities as tools for Large Language Models (LLMs). It’s built on Azure Functions (isolated) and uses the Azure Maps .NET SDK and REST APIs for search, routing, rendering, weather, time zone, and geolocation.
 
-> [!IMPORTANT]
-> The **Azure Maps MCP Server** is currently in preview. You can expect changes prior to the MCP server becoming generally available.
-> You should avoid using this MCP server preview in production apps.
+> Important: This MCP server is in preview. Interfaces and behaviors may change. Avoid using in production.
 
-## Overview
+## What you can do
 
-This project implements an MCP server using Azure Functions that integrates with Azure Maps services and comprehensive country data. It allows LLMs to perform a wide range of geographic operations including:
+- Geocode and search places (forward and reverse)
+- Get administrative boundaries where available
+- Plan routes, compute matrices, or reachable ranges (isochrones)
+- Render static map images
+- Resolve country from IP (single or batch) and validate IPs
+- Get time zone info for coordinates
+- Get weather conditions, hourly/daily forecasts, and alerts
+- Look up country metadata and search by name/code
 
-- **Geocoding & Search**: Convert addresses or place names to coordinates and vice versa
-- **Routing**: Calculate routes, travel times and reachable areas
- - **Map Rendering**: Generate static map images
-- **Geolocation**: Determine country codes and location info from IP addresses
-- **Country Intelligence**: Access basic country information and search
- - **Time Zones & Weather**: Query time zone info and weather conditions/forecasts
+This project integrates Azure Maps services. Some endpoints use the Azure Maps .NET SDK (Search, Routing, Rendering, Geolocation) and others call Azure Maps REST APIs (e.g., Weather, Time Zone, Snap to Roads). Availability of polygons and certain details can vary by region and data source.
 
-## ⚙️ Supported Tools
+## Tools and when to use them
 
-Interact with these Azure Maps services through the following MCP tools:
+Each tool accepts a minimal set of parameters focused on common scenarios. Boolean-like tool inputs should be provided as strings: "true" or "false" (case-insensitive).
 
-### 🔍 Location search & analysis
+### Location and country
 
-- location_find: Find locations by address/place name. Returns coordinates, formatted address, components, confidence, and optional boundaries.
-- location_analyze: Reverse geocode coordinates and return address plus administrative boundary polygons (locality, postalCode, adminDistrict, countryRegion).
-- search_country_info: Get country info by ISO 3166-1 code (alpha-2 or alpha-3), e.g., US/USA.
-- search_countries: Search countries by name or code with optional max result limit.
+- location_find
+  - What: Geocode an address/place query. Returns coordinates, formatted address, components, confidence. Optionally includes boundary polygons.
+  - When: You have text like "Eiffel Tower Paris" or an address and need lat/lon and address parts.
+  - Inputs: query (string), maxResults (1–20), includeBoundaries ("true"|"false").
+  - Notes: Boundary search attempts the requested type/resolution, then falls back across resolutions and boundary types (locality → postalCode → adminDistrict → countryRegion). Boundaries may not exist for all places.
 
-### 🛣️ Routing & navigation
+- location_analyze
+  - What: Reverse geocode lat/lon to an address and get boundary polygons for a chosen level.
+  - When: You already have coordinates and want address context plus polygons.
+  - Inputs: latitude, longitude, boundaryType (locality|postalCode|adminDistrict|countryRegion), resolution (small|medium|large).
+  - Notes: Includes the same fallback strategy as above if the specific polygon is unavailable.
 
-- navigation_calculate: Universal route calculation. Use calculationType = directions | matrix | range. Options include travelMode, routeType, avoidTolls, avoidHighways, and time/distance budgets for range.
-- navigation_analyze: Analyze a series of waypoints for international travel, border crossings, and related considerations.
+- search_country_info
+  - What: Get country info by ISO code (alpha‑2 or alpha‑3), e.g., US or USA.
+  - When: You want a quick code→name lookup.
 
-### 🖼️ Map rendering
+- search_countries
+  - What: Search countries by name or code.
+  - When: You want to match partial names/codes and pick from a list.
 
-- render_staticmap: Generate static PNG map images for a bounding box with optional markers and paths. Returns a data URI.
+### Routing and navigation
 
-### 🌐 Geolocation & IP analysis
+- navigation_calculate
+  - What: One tool for directions, distance/time matrix, or reachable range.
+  - When:
+    - directions: turn a list of waypoints into a route.
+    - matrix: get all‑to‑all travel times/distances for a set of points.
+    - range: compute an isochrone from a center point using time or distance budget.
+  - Inputs: coordinates (LatLon[]), calculationType (directions|matrix|range), travelMode, routeType, avoidTolls ("true"|"false"), avoidHighways ("true"|"false"), timeBudgetMinutes or distanceBudgetKm for range.
+  - Notes: Uses Azure Maps Routing. Data availability may vary by mode and region.
 
-- geolocation_ip: Get country code and name for a public IPv4/IPv6 address.
-- geolocation_ip_batch: Batch version for up to 100 IP addresses in one call.
-- geolocation_ip_validate: Validate IP address format and identify traits (family, loopback, private/public).
+- navigation_analyze
+  - What: Analyze waypoints for international travel (countries traversed, basic considerations).
+  - When: High-level travel context is needed in addition to a route.
 
-### 🕰️ Time zones
+### Places (POI)
 
-- timezone_by_coordinates: Time zone details (offsets, DST, names, sunrise/sunset) for latitude/longitude.
+- places_nearby
+  - What: Find places near a coordinate with a simple radius.
+  - When: You need nearby POIs (e.g., coffee shops around current location).
+  - Inputs: latitude, longitude, radiusMeters (100–20000, default 2000), limit (1–25, default 10).
 
-### ⛅ Weather
+- places_search
+  - What: Fuzzy search by keywords with optional lat/lon bias.
+  - When: You have a term like "pharmacy 98052" or "bakery" and optional location bias.
+  - Inputs: query (string), optional latitude/longitude bias, limit (1–25, default 10).
 
-- weather_current: Current conditions at coordinates (temperature, precip, wind, humidity, etc.).
-- weather_hourly: Hourly forecast for 1/12/24/72/120/240 hours.
-- weather_daily: Daily forecast for 1/5/10/25/45 days.
-- weather_alerts: Severe weather alerts near coordinates.
+- places_categories
+  - What: Retrieve the POI category tree (IDs and names).
+  - When: You need to classify or filter POI searches by categories.
 
-## Prerequisites
+### Maps rendering
 
-- [.NET 9.0 SDK](https://dotnet.microsoft.com/download/dotnet/9.0)
-- [Azure Functions Core Tools](https://learn.microsoft.com/azure/azure-functions/functions-run-local)
-- Azure Maps subscription key
+- render_staticmap
+  - What: Generate a static PNG for a bounding box; supports markers and paths.
+  - When: You need to show a simple map snapshot with overlays.
+  - Inputs: boundingBox (JSON: {west,south,east,north}), zoomLevel (1–20), width/height (1–8192), mapStyle (road|satellite|hybrid), optional markers/paths.
+
+### Geolocation (IP)
+
+- geolocation_ip
+  - What: Resolve a public IPv4/IPv6 to ISO country code (alpha‑2) and country name.
+  - When: You need coarse country location for an IP.
+  - Notes: Private and loopback IPs aren’t geolocatable.
+
+- geolocation_ip_batch
+  - What: Batch variant (up to 100 IPs). Deduplicated and processed in parallel.
+  - When: You need to resolve multiple IPs efficiently.
+
+- geolocation_ip_validate
+  - What: Validate IP format and indicate public/private, loopback, IPv4/IPv6, and geolocatable.
+  - When: You need pre-checks before attempting geolocation.
+
+### Time zones
+
+- timezone_by_coordinates
+  - What: Time zone info (standard/daylight offsets, names, sunrise/sunset) for a coordinate.
+  - When: You need local time context and offsets for a point.
+
+### Weather
+
+- weather_current
+  - What: Current conditions (temperature, wind, humidity, precipitation, etc.).
+  - When: You need nowcast-like summary for coordinates.
+
+- weather_hourly
+  - What: Hourly forecast for specified hours (subject to SKU availability).
+  - When: You need near‑term forecast detail.
+
+- weather_daily
+  - What: Daily forecast for a specified number of days (subject to SKU availability).
+  - When: You need medium‑range forecast summaries.
+
+- weather_alerts
+  - What: Severe weather alerts near a coordinate.
+  - When: You need awareness of extreme events impacting the location.
+
+### Roads
+
+- snap_to_roads
+  - What: Snap GPS points to the road network; optionally interpolate and include speed limits.
+  - When: You need to clean up noisy traces or reason about road alignment.
+  - Inputs: points (LatLon[]), includeSpeedLimit ("true"|"false"), interpolate ("true"|"false"), travelMode (driving|truck).
+
+## Inputs and outputs
+
+- Boolean-like parameters must be provided as strings: "true" or "false" (case-insensitive). This avoids function binding issues across different MCP clients.
+- Responses have a consistent wrapper: { success, meta, data }. Inside data:
+  - List-like responses typically follow { query, items, summary }.
+  - Single-result responses follow { query, result }.
+  - Some tools add helpful fields (e.g., resolvedType/resolvedResolution for boundaries).
+
+Example MCP call payload (location_find):
+
+```json
+{
+  "method": "tools/call",
+  "params": {
+    "name": "location_find",
+    "arguments": {
+      "query": "Eiffel Tower Paris",
+      "maxResults": 5,
+      "includeBoundaries": "true"
+    }
+  }
+}
+```
 
 ## Setup
 
-### 1. Get Azure Maps Subscription Key
+Prerequisites:
+- [.NET 9 SDK](https://dotnet.microsoft.com/download)
+- [Azure Functions Core Tools](https://learn.microsoft.com/azure/azure-functions/functions-run-local)
+- An Azure Maps account and subscription key (create in Azure Portal → Azure Maps resource → Authentication)
 
-1. Create an Azure Maps account in the [Azure Portal](https://portal.azure.com)
-2. Create a new Azure Maps resource
-3. Copy the subscription key from the resource's authentication settings
-
-### 2. Configure Environment
-
-Create or update the `source/local.settings.json` file with your Azure Maps subscription key:
+Local configuration (source/local.settings.json):
 
 ```json
 {
@@ -79,159 +167,62 @@ Create or update the `source/local.settings.json` file with your Azure Maps subs
     "AzureWebJobsStorage": "None",
     "AzureWebJobsSecretStorageType": "Files",
     "FUNCTIONS_WORKER_RUNTIME": "dotnet-isolated",
-    "AZURE_MAPS_SUBSCRIPTION_KEY": "<your-azure-maps-subscription-key-here>"
+    "AZURE_MAPS_SUBSCRIPTION_KEY": "<your-azure-maps-subscription-key>"
   }
 }
 ```
 
-⚠️ **Important**: Never commit your actual subscription key to version control. Use environment variables or Azure Key Vault for production deployments.
+Never commit real keys. Use environment variables or Azure Key Vault in production.
 
-## Building the Project
+## Build and run
 
-### Clean and Build
-```bash
-# Navigate to the project directory
-cd source
-
-# Clean the project
-dotnet clean
-
-# Restore dependencies and build
-dotnet build
-```
-
-### Using VS Code Tasks
-If you're using VS Code, you can use the predefined tasks:
-- build (functions): Clean + build the Functions project
+Using VS Code tasks:
+- build (functions): Clean + build
 - func: host start: Start the local Functions host (depends on build)
-- publish (functions): Publish the project in Release configuration
 
-Tip: Use Command+Shift+P on macOS and search for "Tasks: Run Task".
-
-## Running the Server
-
-### Local Development
-
-#### Option 1: Using Azure Functions Core Tools
+CLI (optional):
 ```bash
-# Navigate to the source directory
 cd source
-
-# Build the project first
 dotnet build
-
-# Start the function host
 cd bin/Debug/net9.0
 func host start
 ```
 
-#### Option 2: Using VS Code
-- Press `F5` or use "Run and Debug" in VS Code
-- Or run the task: `Ctrl+Shift+P` → "Tasks: Run Task" → "func: host start"
+Local Functions host listens on http://localhost:7071 by default.
 
-The local HTTP endpoint is typically http://localhost:7071 when using Azure Functions Core Tools. The launch setting port 7174 refers to the internal worker port and is not the HTTP port.
-
-### Production Deployment
-
-#### Azure Functions
-Deploy to Azure Functions for production use:
-
-```bash
-# Publish the project
-dotnet publish --configuration Release
-
-# Deploy using Azure Functions Core Tools
-func azure functionapp publish your-function-app-name
-```
-
-
-
-## Project Structure
+## Project layout
 
 ```
 azure-maps-mcp/
 ├── source/
-│   ├── azure-maps-mcp.csproj     # Project file with dependencies
-│   ├── Program.cs                 # Functions isolated worker + MCP configuration
-│   ├── host.json                  # Azure Functions host configuration
-│   ├── local.settings.json        # Local development settings (do not commit real secrets)
+│   ├── Program.cs
 │   ├── Services/
-│   │   ├── IAzureMapsService.cs   # Service interface
-│   │   └── AzureMapsService.cs    # Azure Maps SDK clients
-│   └── Tools/
-│       ├── LocationTool.cs        # location_find, location_analyze
-│       ├── NavigationTool.cs      # navigation_calculate, navigation_analyze
-│       ├── RenderTool.cs          # render_staticmap
-│       ├── GeolocationTool.cs     # geolocation_ip, geolocation_ip_batch, geolocation_ip_validate
-│       ├── CountryTool.cs         # search_country_info, search_countries
-│       ├── TimeZoneTool.cs        # timezone_by_coordinates
-│       └── WeatherTool.cs         # weather_current, weather_hourly, weather_daily, weather_alerts
+│   │   ├── IAzureMapsService.cs
+│   │   └── AzureMapsService.cs
+│   ├── Common/ (helpers for validation, responses, REST client)
+│   └── Tools/ (Functions that expose MCP tools)
 └── README.md
 ```
 
-## Dependencies
+## Notes about Azure Maps (fact-checked at a high level)
 
-- Azure.Maps.Search (2.0.0-beta.5)
-- Azure.Maps.Routing (1.0.0-beta.4)
-- Azure.Maps.Rendering (2.0.0-beta.1)
-- Azure.Maps.Geolocation (1.0.0-beta.3)
-- CountryData.Standard (1.5.0)
-- Microsoft.Azure.Functions.Worker (2.0.0)
-- Microsoft.Azure.Functions.Worker.Extensions.Mcp (1.0.0-preview.6)
-- .NET 9.0 target framework
+- Azure Maps provides REST APIs and SDKs for search/geocoding, routing, rendering, time zone, weather, geolocation, and other geospatial services. Some APIs are available via the Azure Maps .NET SDK used here (Search, Routing, Rendering, Geolocation). Others are accessed via REST in this project (e.g., Weather, Time Zone, Snap to Roads).
+- Availability of administrative boundary polygons varies by region and boundary level. A polygon may not be returned for a given type/resolution at specific coordinates.
+- Weather and forecast horizons, alert availability, and detail levels depend on data provider coverage and your Azure Maps pricing tier/SKU.
 
-## Configuration
-
-### Environment Variables
-- `AZURE_MAPS_SUBSCRIPTION_KEY`: Your Azure Maps subscription key (required)
-
-### Azure Functions Settings
-- `AzureWebJobsStorage`: Set to "None" for local development
-- `FUNCTIONS_WORKER_RUNTIME`: Set to "dotnet-isolated"
+For official details and the latest service capabilities, see Azure Maps documentation: https://learn.microsoft.com/azure/azure-maps/
 
 ## Troubleshooting
 
-### Common Issues
+- Missing key: Ensure AZURE_MAPS_SUBSCRIPTION_KEY is configured.
+- Binder errors on booleans: Send "true"/"false" strings for boolean-like tool inputs.
+- No boundary geometry: It can be normal; the server tries multiple types/resolutions and returns geometry when available.
 
-1. **Missing subscription key**: Ensure `AZURE_MAPS_SUBSCRIPTION_KEY` is set in your environment
-2. **Build failures**: Make sure you have .NET 9.0 SDK installed
-3. **Function startup issues**: Check that Azure Functions Core Tools are installed and up to date
+## Contributing and support
 
-### Logs
-The application uses structured logging. Check the console output for detailed error messages and operational information.
+This project follows the Microsoft Open Source Code of Conduct. See the repository’s CODE_OF_CONDUCT.md.
+- Issues and feature requests: open a GitHub issue.
+- Azure Maps guidance: https://learn.microsoft.com/azure/azure-maps/
+- Commercial support: https://azure.microsoft.com/support/
 
-## Microsoft Open Source
-
-This project has adopted the [Microsoft Open Source Code of Conduct](https://opensource.microsoft.com/codeofconduct/).
-For more information see the [Code of Conduct FAQ](https://opensource.microsoft.com/codeofconduct/faq/) or
-contact [opencode@microsoft.com](mailto:opencode@microsoft.com) with any additional questions or comments.
-
-## Support
-
-This project is supported by Microsoft. For support and questions:
-
-- Create an issue in this repository for bugs and feature requests
-- For general questions about Azure Maps, visit [Azure Maps Documentation](https://learn.microsoft.com/azure/azure-maps/)
-- For commercial support, contact [Azure Support](https://azure.microsoft.com/support/)
-
-## Contributing
-
-This project welcomes contributions and suggestions. Most contributions require you to agree to a
-Contributor License Agreement (CLA) declaring that you have the right to, and actually do, grant us
-the rights to use your contribution. For details, visit https://cla.opensource.microsoft.com.
-
-When you submit a pull request, a CLA bot will automatically determine whether you need to provide
-a CLA and decorate the PR appropriately (e.g., status check, comment). Simply follow the instructions
-provided by the bot. You will only need to do this once across all repos using our CLA.
-
-This project has adopted the [Microsoft Open Source Code of Conduct](https://opensource.microsoft.com/codeofconduct/).
-For more information see the [Code of Conduct FAQ](https://opensource.microsoft.com/codeofconduct/faq/) or
-contact [opencode@microsoft.com](mailto:opencode@microsoft.com) with any additional questions or comments.
-
-## Trademarks
-
-This project may contain trademarks or logos for projects, products, or services. Authorized use of Microsoft 
-trademarks or logos is subject to and must follow 
-[Microsoft's Trademark & Brand Guidelines](https://www.microsoft.com/en-us/legal/intellectualproperty/trademarks/usage/general).
-Use of Microsoft trademarks or logos in modified versions of this project must not cause confusion or imply Microsoft sponsorship.
-Any use of third-party trademarks or logos are subject to those third-party's policies.
+Trademarks: Use of Microsoft marks is subject to Microsoft’s Trademark & Brand Guidelines.

@@ -67,14 +67,14 @@ public class NavigationTool : BaseMapsTool
         )] int? distanceBudgetKm = null,
         [McpToolProperty(
             "avoidTolls",
-            "boolean",
-            "Avoid toll roads. Default: false"
-        )] bool avoidTolls = false,
+            "string",
+            "Avoid toll roads: 'true' or 'false'. Default: false"
+        )] string avoidTolls = "false",
         [McpToolProperty(
             "avoidHighways",
-            "boolean",
-            "Avoid highways. Default: false"
-        )] bool avoidHighways = false
+            "string",
+            "Avoid highways: 'true' or 'false'. Default: false"
+        )] string avoidHighways = "false"
     )
     {
         return await ExecuteWithErrorHandling(async () =>
@@ -92,13 +92,20 @@ public class NavigationTool : BaseMapsTool
             var rtParsed = ToolsHelper.ParseRouteType(routeType);
             if (!rtParsed.IsValid) throw new ArgumentException(rtParsed.Error);
 
+            // Validate boolean parameters
+            var tollsValidation = ValidationHelper.ValidateBooleanString(avoidTolls, "avoidTolls");
+            if (!tollsValidation.IsValid) throw new ArgumentException(tollsValidation.ErrorMessage);
+
+            var highwaysValidation = ValidationHelper.ValidateBooleanString(avoidHighways, "avoidHighways");
+            if (!highwaysValidation.IsValid) throw new ArgumentException(highwaysValidation.ErrorMessage);
+
             _logger.LogInformation("Route calculation: {Type} for {Count} points using {Mode} transport",
                 calculationType, coordinates.Length, travelMode);
 
             // Route to appropriate calculation method
             return calculationType.ToLower() switch
             {
-        "directions" => await CalculateDirections(coordinates, tmParsed.Value, rtParsed.Value, avoidTolls, avoidHighways),
+        "directions" => await CalculateDirections(coordinates, tmParsed.Value, rtParsed.Value, tollsValidation.Value, highwaysValidation.Value),
                 "matrix" => await CalculateMatrix(coordinates, tmParsed.Value, rtParsed.Value),
                 "range" => await CalculateRange(coordinates[0], tmParsed.Value, rtParsed.Value, timeBudgetMinutes, distanceBudgetKm),
                 _ => throw new ArgumentException($"Invalid calculation type '{calculationType}'. Valid options: directions, matrix, range")

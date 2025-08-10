@@ -62,9 +62,9 @@ public class LocationTool : BaseMapsTool
         )] int maxResults = 5,
         [McpToolProperty(
             "includeBoundaries",
-            "boolean",
-            "Include administrative boundaries. Default: false"
-        )] bool includeBoundaries = false
+            "string",
+            "Include administrative boundaries: 'true' or 'false'. Default: false"
+        )] string includeBoundaries = "false"
     )
     {
         return await ExecuteWithErrorHandling(async () =>
@@ -76,8 +76,11 @@ public class LocationTool : BaseMapsTool
             var (rangeError, normalizedMaxResults) = ValidateRange(maxResults, 1, 20, "maxResults");
             if (rangeError != null) throw new ArgumentException(rangeError);
 
+            var boundariesValidation = ValidationHelper.ValidateBooleanString(includeBoundaries, "includeBoundaries");
+            if (!boundariesValidation.IsValid) throw new ArgumentException(boundariesValidation.ErrorMessage);
+
             _logger.LogInformation("Location search: '{Query}' (max: {MaxResults}, boundaries: {Boundaries})",
-                query.Trim(), normalizedMaxResults, includeBoundaries);
+                query.Trim(), normalizedMaxResults, boundariesValidation.Value);
 
             // Perform geocoding
             var geocodingOptions = new GeocodingQuery() { Query = query.Trim(), Top = normalizedMaxResults };
@@ -113,7 +116,7 @@ public class LocationTool : BaseMapsTool
                 };
 
                 // Optionally add boundary information
-                if (includeBoundaries)
+                if (boundariesValidation.Value)
                 {
                     try
                     {
@@ -144,7 +147,7 @@ public class LocationTool : BaseMapsTool
                 query = query.Trim(),
                 results,
                 count = results.Count,
-        includedBoundaries = includeBoundaries
+        includedBoundaries = boundariesValidation.Value
             };
 
     }, "FindLocation", new { query, maxResults, includeBoundaries });
@@ -251,42 +254,64 @@ public class LocationTool : BaseMapsTool
     /// </summary>
     private async Task<object?> GetLocationBoundary(double latitude, double longitude, string boundaryType, string resolution)
     {
-        try
+        // Try the requested resolution first, then fall back to others, and finally a broader boundary type.
+        var resolutionOrder = new[] { "small", "medium", "large" };
+        var orderedRes = resolutionOrder.OrderBy(r => r == resolution ? 0 : 1).ThenBy(r => Array.IndexOf(resolutionOrder, r)).ToArray();
+
+        var typeOrder = new List<string> { boundaryType };
+        if (boundaryType.Equals("locality", StringComparison.OrdinalIgnoreCase))
         {
-            var options = new GetPolygonOptions()
-            {
-                Coordinates = new GeoPosition(longitude, latitude),
-                ResultType = BoundaryTypes[boundaryType],
-                Resolution = Resolutions[resolution]
-            };
+            // Common fallbacks when locality geometry is unavailable in some regions
+            typeOrder.Add("postalcode");
+            typeOrder.Add("admindistrict");
+            typeOrder.Add("countryregion");
+        }
 
-            var response = await _searchClient.GetPolygonAsync(options);
-
-            if (response.Value?.Geometry != null && response.Value.Geometry.Count > 0)
+        foreach (var bt in typeOrder)
+        {
+            foreach (var res in orderedRes)
             {
-                var geometries = new List<object>();
-                for (int i = 0; i < response.Value.Geometry.Count; i++)
+                try
                 {
-                    if (response.Value.Geometry[i] is GeoPolygon polygon)
+                    var options = new GetPolygonOptions()
                     {
-                        var coords = polygon.Coordinates[0].Select(c => new[] { c.Latitude, c.Longitude }).ToArray();
-                        geometries.Add(new { index = i, pointCount = coords.Length, coordinates = coords });
+                        Coordinates = new GeoPosition(longitude, latitude),
+                        ResultType = BoundaryTypes[bt],
+                        Resolution = Resolutions[res]
+                    };
+
+                    var response = await _searchClient.GetPolygonAsync(options);
+
+                    if (response.Value?.Geometry != null && response.Value.Geometry.Count > 0)
+                    {
+                        var geometries = new List<object>();
+                        for (int i = 0; i < response.Value.Geometry.Count; i++)
+                        {
+                            if (response.Value.Geometry[i] is GeoPolygon polygon)
+                            {
+                                var coords = polygon.Coordinates[0].Select(c => new[] { c.Latitude, c.Longitude }).ToArray();
+                                geometries.Add(new { index = i, pointCount = coords.Length, coordinates = coords });
+                            }
+                        }
+
+                        return new
+                        {
+                            resolvedType = bt,
+                            resolvedResolution = res,
+                            count = geometries.Count,
+                            polygons = geometries,
+                            copyright = response.Value.Properties?.Copyright
+                        };
                     }
                 }
-
-                return new
+                catch (Exception ex)
                 {
-                    count = geometries.Count,
-                    polygons = geometries,
-                    copyright = response.Value.Properties?.Copyright
-                };
+                    _logger.LogWarning(ex, "Boundary fetch failed for {Type}/{Res} at {Lat},{Lon}", bt, res, latitude, longitude);
+                }
             }
         }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Failed to get boundary for coordinates: {Latitude}, {Longitude}", latitude, longitude);
-        }
 
+        // No geometry found after fallbacks
         return null;
     }
 
