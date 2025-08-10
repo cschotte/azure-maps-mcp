@@ -2,8 +2,6 @@
 // Licensed under the MIT License.
 
 using System.Globalization;
-using System.Net;
-using System.Net.Http;
 using System.Text.Json;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Azure.Functions.Worker.Extensions.Mcp;
@@ -19,21 +17,15 @@ namespace Azure.Maps.Mcp.Tools;
 /// </summary>
 public sealed class TimeZoneTool : BaseMapsTool
 {
-    private readonly IHttpClientFactory _httpClientFactory;
-    private readonly string _subscriptionKey;
+    private readonly AtlasRestClient _atlas;
 
     public TimeZoneTool(
         IAzureMapsService mapsService,
         ILogger<TimeZoneTool> logger,
-        IHttpClientFactory httpClientFactory,
-        IConfiguration configuration)
+        AtlasRestClient atlas)
         : base(mapsService, logger)
     {
-        _httpClientFactory = httpClientFactory;
-        _subscriptionKey =
-            configuration["AZURE_MAPS_SUBSCRIPTION_KEY"] ??
-            configuration["Values:AZURE_MAPS_SUBSCRIPTION_KEY"] ??
-            throw new InvalidOperationException("AZURE_MAPS_SUBSCRIPTION_KEY is required for TimeZone API calls");
+        _atlas = atlas;
     }
 
     /// <summary>
@@ -48,25 +40,10 @@ public sealed class TimeZoneTool : BaseMapsTool
         [McpToolProperty("latitude", "number", "Latitude (-90 to 90). Example: 47.6062")] double latitude,
         [McpToolProperty("longitude", "number", "Longitude (-180 to 180). Example: -122.3321")] double longitude,
         [McpToolProperty(
-            "options",
+            "includeTransitions",
             "string",
-            "Optional detail level: none | zoneInfo | transitions | all. Default: zoneInfo")]
-        string? options = "zoneInfo",
-        [McpToolProperty(
-            "timeStamp",
-            "string",
-            "Optional ISO 8601 timestamp to evaluate (e.g. 2025-08-10T12:00:00Z). Default: now on server")]
-        string? timeStamp = null,
-        [McpToolProperty(
-            "transitionsFrom",
-            "string",
-            "Optional ISO 8601 start date for DST transitions (only when options=transitions or all)")]
-        string? transitionsFrom = null,
-        [McpToolProperty(
-            "transitionsYears",
-            "number",
-            "Optional number of years from transitionsFrom for DST transitions (1-5 typical)")]
-        int? transitionsYears = null)
+            "Include DST transitions: 'true' or 'false'. Default: false")]
+        string includeTransitions = "false")
     {
         // Validate inputs using shared helpers
         var coordError = ValidateCoordinates(latitude, longitude);
@@ -75,73 +52,26 @@ public sealed class TimeZoneTool : BaseMapsTool
             return coordError;
         }
 
-        // Normalize and validate options
-        var validOptions = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-            { "none", "zoneInfo", "transitions", "all" };
-        var selectedOptions = string.IsNullOrWhiteSpace(options) ? "zoneInfo" : options.Trim();
-        if (!validOptions.Contains(selectedOptions))
-        {
-            return ResponseHelper.CreateValidationError(
-                $"Invalid options '{options}'. Valid: none | zoneInfo | transitions | all");
-        }
-
-        // Validate timestamps if provided
-        if (!IsNullOrIso8601(timeStamp))
-        {
-            return ResponseHelper.CreateValidationError(
-                "timeStamp must be ISO 8601 (e.g., 2025-08-10T12:00:00Z)");
-        }
-        if (!IsNullOrIso8601(transitionsFrom))
-        {
-            return ResponseHelper.CreateValidationError(
-                "transitionsFrom must be ISO 8601 date/time");
-        }
-
-        if (transitionsYears is < 0 or > 10)
-        {
-            return ResponseHelper.CreateValidationError(
-                "transitionsYears must be between 0 and 10 if provided");
-        }
+        var includeTransitionsOk = ValidationHelper.ValidateBooleanString(includeTransitions, nameof(includeTransitions));
+        if (!includeTransitionsOk.IsValid) return ResponseHelper.CreateValidationError(includeTransitionsOk.ErrorMessage!);
 
         try
         {
-            var client = _httpClientFactory.CreateClient();
-            client.BaseAddress = new Uri("https://atlas.microsoft.com/");
-
-            var q = new List<string>
+            var query = new Dictionary<string, string?>
             {
-                $"api-version=1.0",
-                $"subscription-key={WebUtility.UrlEncode(_subscriptionKey)}",
-                // Ensure invariant culture for decimals
-                $"query={latitude.ToString(CultureInfo.InvariantCulture)},{longitude.ToString(CultureInfo.InvariantCulture)}"
+                { "api-version", "1.0" },
+                { "query", $"{latitude.ToString(CultureInfo.InvariantCulture)},{longitude.ToString(CultureInfo.InvariantCulture)}" },
+                { "options", includeTransitionsOk.Value ? "all" : "zoneInfo" }
             };
 
-            if (!string.Equals(selectedOptions, "zoneInfo", StringComparison.OrdinalIgnoreCase))
+            var (ok, body, status, reason) = await _atlas.GetAsync("timezone/byCoordinates/json", query);
+
+            if (!ok)
             {
-                q.Add($"options={WebUtility.UrlEncode(selectedOptions)}");
-            }
-            if (!string.IsNullOrWhiteSpace(timeStamp)) q.Add($"timeStamp={WebUtility.UrlEncode(timeStamp)}");
-            if (!string.IsNullOrWhiteSpace(transitionsFrom)) q.Add($"transitionsFrom={WebUtility.UrlEncode(transitionsFrom)}");
-            if (transitionsYears.HasValue) q.Add($"transitionsYears={transitionsYears.Value}");
-
-            var url = $"timezone/byCoordinates/json?{string.Join('&', q)}";
-
-            _logger.LogInformation(
-                "Requesting TimeZone by coordinates: lat={Lat}, lon={Lon}, options={Options}",
-                latitude, longitude, selectedOptions);
-
-            using var req = new HttpRequestMessage(HttpMethod.Get, url);
-            req.Headers.Add("Accept", "application/json");
-
-            using var resp = await client.SendAsync(req);
-            var body = await resp.Content.ReadAsStringAsync();
-
-            if (!resp.IsSuccessStatusCode)
-            {
-                _logger.LogWarning("TimeZone API returned {Status}: {Body}", (int)resp.StatusCode, body);
+                _logger.LogWarning("TimeZone API returned {Status}: {Body}", status, body);
                 return ResponseHelper.CreateErrorResponse(
-                    $"Timezone API error: {(int)resp.StatusCode} {resp.ReasonPhrase}",
-                    new { status = (int)resp.StatusCode, response = SafeParse(body) });
+                    $"Timezone API error: {status} {reason}",
+                    new { status, response = SafeParse(body) });
             }
 
             using var doc = JsonDocument.Parse(body);
@@ -149,7 +79,7 @@ public sealed class TimeZoneTool : BaseMapsTool
 
             return ResponseHelper.CreateSuccessResponse(new
             {
-                query = new { latitude, longitude, options = selectedOptions },
+                query = new { latitude, longitude, includeTransitions = includeTransitionsOk.Value },
                 summary,
                 raw = doc.RootElement
             });
@@ -243,9 +173,5 @@ public sealed class TimeZoneTool : BaseMapsTool
         return $"{sign}{abs:hh\\:mm}";
     }
 
-    private static bool IsNullOrIso8601(string? value)
-    {
-        if (string.IsNullOrWhiteSpace(value)) return true;
-        return DateTimeOffset.TryParse(value, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out _);
-    }
+    // Removed advanced timestamp validation to keep the surface area minimal.
 }

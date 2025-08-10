@@ -6,6 +6,7 @@ using Microsoft.Azure.Functions.Worker.Builder;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using CountryData.Standard;
+using Azure.Maps.Mcp.Common;
 
 var builder = FunctionsApplication.CreateBuilder(args);
 
@@ -22,6 +23,7 @@ builder.ConfigureMcpTool("Azure Maps Tool"); // Register the tool name exposed t
 builder.Services.AddSingleton<IAzureMapsService, AzureMapsService>();
 builder.Services.AddSingleton<CountryHelper>();
 builder.Services.AddHttpClient();
+builder.Services.AddSingleton<AtlasRestClient>();
 
 // Build and run application
 var app = builder.Build();
