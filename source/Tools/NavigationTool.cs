@@ -67,14 +67,14 @@ public class NavigationTool : BaseMapsTool
         )] int? distanceBudgetKm = null,
         [McpToolProperty(
             "avoidTolls",
-            "string",
-            "Avoid toll roads: 'true' or 'false'. Default: false"
-        )] string avoidTolls = "false",
+            "boolean",
+            "Avoid toll roads. Default: false"
+        )] bool avoidTolls = false,
         [McpToolProperty(
             "avoidHighways",
-            "string",
-            "Avoid highways: 'true' or 'false'. Default: false"
-        )] string avoidHighways = "false"
+            "boolean",
+            "Avoid highways. Default: false"
+        )] bool avoidHighways = false
     )
     {
         return await ExecuteWithErrorHandling(async () =>
@@ -92,26 +92,19 @@ public class NavigationTool : BaseMapsTool
             var rtParsed = ToolsHelper.ParseRouteType(routeType);
             if (!rtParsed.IsValid) throw new ArgumentException(rtParsed.Error);
 
-            // Validate boolean parameters
-            var tollsValidation = ValidationHelper.ValidateBooleanString(avoidTolls, "avoidTolls");
-            if (!tollsValidation.IsValid) throw new ArgumentException(tollsValidation.ErrorMessage);
-
-            var highwaysValidation = ValidationHelper.ValidateBooleanString(avoidHighways, "avoidHighways");
-            if (!highwaysValidation.IsValid) throw new ArgumentException(highwaysValidation.ErrorMessage);
-
             _logger.LogInformation("Route calculation: {Type} for {Count} points using {Mode} transport",
                 calculationType, coordinates.Length, travelMode);
 
             // Route to appropriate calculation method
             return calculationType.ToLower() switch
             {
-                "directions" => await CalculateDirections(coordinates, tmParsed.Value, rtParsed.Value, tollsValidation.Value, highwaysValidation.Value),
+        "directions" => await CalculateDirections(coordinates, tmParsed.Value, rtParsed.Value, avoidTolls, avoidHighways),
                 "matrix" => await CalculateMatrix(coordinates, tmParsed.Value, rtParsed.Value),
                 "range" => await CalculateRange(coordinates[0], tmParsed.Value, rtParsed.Value, timeBudgetMinutes, distanceBudgetKm),
                 _ => throw new ArgumentException($"Invalid calculation type '{calculationType}'. Valid options: directions, matrix, range")
             };
 
-        }, "CalculateRoute", new { calculationType, coordinates.Length, travelMode });
+    }, "CalculateRoute", new { calculationType, waypointCount = coordinates.Length, travelMode, avoidTolls, avoidHighways });
     }
 
     /// <summary>
@@ -213,15 +206,19 @@ public class NavigationTool : BaseMapsTool
 
             return new
             {
-                summary = new
+                query = new { waypointCount = coordinates.Length },
+                result = new
                 {
-                    totalWaypoints = coordinates.Length,
-                    countriesTraversed = countriesFound.Count,
-                    countryCodes = countriesFound.ToArray(),
-                    isInternationalRoute = isInternational
-                },
-                waypointAnalysis,
-                travelConsiderations
+                    summary = new
+                    {
+                        totalWaypoints = coordinates.Length,
+                        countriesTraversed = countriesFound.Count,
+                        countryCodes = countriesFound.ToArray(),
+                        isInternationalRoute = isInternational
+                    },
+                    waypointAnalysis,
+                    travelConsiderations
+                }
             };
 
         }, "AnalyzeRoute", new { waypointCount = coordinates.Length });
@@ -259,25 +256,29 @@ public class NavigationTool : BaseMapsTool
 
         return new
         {
-            type = "directions",
-            summary = new
+            query = new { waypointCount = coordinates.Length, travelMode = travelMode.ToString(), routeType = routeType.ToString(), avoidTolls, avoidHighways },
+            result = new
             {
-                distanceMeters = route.Summary.LengthInMeters,
-                travelTimeSeconds = route.Summary.TravelTimeDuration?.TotalSeconds
-            },
-            geometry,
-            legs = route.Legs?.Select(leg => new
-            {
-                distanceMeters = leg.Summary.LengthInMeters,
-                travelTimeSeconds = leg.Summary.TravelTimeInSeconds,
-                trafficDelaySeconds = leg.Summary.TrafficDelayInSeconds
-            }).ToList(),
-            instructions = route.Guidance?.Instructions?.Select(i => new
-            {
-                message = i.Message,
-                maneuver = i.Maneuver?.ToString(),
-                distanceMeters = i.RouteOffsetInMeters
-            }).ToList()
+                type = "directions",
+                summary = new
+                {
+                    distanceMeters = route.Summary.LengthInMeters,
+                    travelTimeSeconds = route.Summary.TravelTimeDuration?.TotalSeconds
+                },
+                geometry,
+                legs = route.Legs?.Select(leg => new
+                {
+                    distanceMeters = leg.Summary.LengthInMeters,
+                    travelTimeSeconds = leg.Summary.TravelTimeInSeconds,
+                    trafficDelaySeconds = leg.Summary.TrafficDelayInSeconds
+                }).ToList(),
+                instructions = route.Guidance?.Instructions?.Select(i => new
+                {
+                    message = i.Message,
+                    maneuver = i.Maneuver?.ToString(),
+                    distanceMeters = i.RouteOffsetInMeters
+                }).ToList()
+            }
         };
     }
 
@@ -330,10 +331,14 @@ public class NavigationTool : BaseMapsTool
 
         return new
         {
-            type = "matrix",
-            pointCount = points.Count,
-            totalPairs = results.Count,
-            results
+            query = new { pointCount = points.Count, travelMode = travelMode.ToString(), routeType = routeType.ToString() },
+            result = new
+            {
+                type = "matrix",
+                pointCount = points.Count,
+                totalPairs = results.Count,
+                results
+            }
         };
     }
 
@@ -378,13 +383,17 @@ public class NavigationTool : BaseMapsTool
 
         return new
         {
-            type = "range",
-            center = new[] { range.Center.Latitude, range.Center.Longitude },
-            budget = timeBudgetMinutes.HasValue
-                ? (object)new { timeMinutes = timeBudgetMinutes.Value }
-                : new { distanceKm = distanceBudgetKm!.Value },
-            boundary,
-            boundaryPointCount = boundary?.Count ?? 0
+            query = new { center = new { latitude = centerPoint.Latitude, longitude = centerPoint.Longitude }, travelMode = travelMode.ToString(), routeType = routeType.ToString(), timeBudgetMinutes, distanceBudgetKm },
+            result = new
+            {
+                type = "range",
+                center = new[] { range.Center.Latitude, range.Center.Longitude },
+                budget = timeBudgetMinutes.HasValue
+                    ? (object)new { timeMinutes = timeBudgetMinutes.Value }
+                    : new { distanceKm = distanceBudgetKm!.Value },
+                boundary,
+                boundaryPointCount = boundary?.Count ?? 0
+            }
         };
     }
 

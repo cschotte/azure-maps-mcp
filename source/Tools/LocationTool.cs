@@ -62,9 +62,9 @@ public class LocationTool : BaseMapsTool
         )] int maxResults = 5,
         [McpToolProperty(
             "includeBoundaries",
-            "string",
-            "Include administrative boundaries: 'true' or 'false'. Default: false"
-        )] string includeBoundaries = "false"
+            "boolean",
+            "Include administrative boundaries. Default: false"
+        )] bool includeBoundaries = false
     )
     {
         return await ExecuteWithErrorHandling(async () =>
@@ -76,11 +76,8 @@ public class LocationTool : BaseMapsTool
             var (rangeError, normalizedMaxResults) = ValidateRange(maxResults, 1, 20, "maxResults");
             if (rangeError != null) throw new ArgumentException(rangeError);
 
-            var boundariesValidation = ValidationHelper.ValidateBooleanString(includeBoundaries, "includeBoundaries");
-            if (!boundariesValidation.IsValid) throw new ArgumentException(boundariesValidation.ErrorMessage);
-
             _logger.LogInformation("Location search: '{Query}' (max: {MaxResults}, boundaries: {Boundaries})",
-                query.Trim(), normalizedMaxResults, boundariesValidation.Value);
+                query.Trim(), normalizedMaxResults, includeBoundaries);
 
             // Perform geocoding
             var geocodingOptions = new GeocodingQuery() { Query = query.Trim(), Top = normalizedMaxResults };
@@ -116,7 +113,7 @@ public class LocationTool : BaseMapsTool
                 };
 
                 // Optionally add boundary information
-                if (boundariesValidation.Value)
+                if (includeBoundaries)
                 {
                     try
                     {
@@ -147,10 +144,10 @@ public class LocationTool : BaseMapsTool
                 query = query.Trim(),
                 results,
                 count = results.Count,
-                includedBoundaries = boundariesValidation.Value
+        includedBoundaries = includeBoundaries
             };
 
-        }, "FindLocation", new { query, maxResults, includeBoundaries });
+    }, "FindLocation", new { query, maxResults, includeBoundaries });
     }
 
     /// <summary>

@@ -152,12 +152,21 @@ public class RenderTool : BaseMapsTool
 
             return new
             {
-                image_data_uri = $"data:image/png;base64,{base64Image}",
-                size_bytes = imageBytes.Length,
-                dimensions = new { width, height },
-                zoom_level = zoomLevel,
-                markers_count = markers?.Length ?? 0,
-                paths_count = paths?.Length ?? 0
+                query = new
+                {
+                    boundingBox,
+                    zoomLevel,
+                    width,
+                    height,
+                    mapStyle,
+                    markerCount = markers?.Length ?? 0,
+                    pathCount = paths?.Length ?? 0
+                },
+                result = new
+                {
+                    imageDataUri = $"data:image/png;base64,{base64Image}",
+                    sizeBytes = imageBytes.Length
+                }
             };
         }, nameof(GetStaticMapImage), new { zoomLevel, width, height, mapStyle });
     }

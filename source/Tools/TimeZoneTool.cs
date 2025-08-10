@@ -41,9 +41,9 @@ public sealed class TimeZoneTool : BaseMapsTool
         [McpToolProperty("longitude", "number", "Longitude (-180 to 180). Example: -122.3321")] double longitude,
         [McpToolProperty(
             "includeTransitions",
-            "string",
-            "Include DST transitions: 'true' or 'false'. Default: false")]
-        string includeTransitions = "false")
+            "boolean",
+            "Include DST transitions. Default: false")]
+        bool includeTransitions = false)
     {
         // Validate inputs using shared helpers
         var coordError = ValidateCoordinates(latitude, longitude);
@@ -52,16 +52,13 @@ public sealed class TimeZoneTool : BaseMapsTool
             return coordError;
         }
 
-        var includeTransitionsOk = ValidationHelper.ValidateBooleanString(includeTransitions, nameof(includeTransitions));
-        if (!includeTransitionsOk.IsValid) return ResponseHelper.CreateValidationError(includeTransitionsOk.ErrorMessage!);
-
         try
         {
             var query = new Dictionary<string, string?>
             {
                 { "api-version", "1.0" },
                 { "query", $"{latitude.ToString(CultureInfo.InvariantCulture)},{longitude.ToString(CultureInfo.InvariantCulture)}" },
-                { "options", includeTransitionsOk.Value ? "all" : "zoneInfo" }
+                { "options", includeTransitions ? "all" : "zoneInfo" }
             };
 
             var (ok, body, status, reason) = await _atlas.GetAsync("timezone/byCoordinates/json", query);
@@ -79,9 +76,8 @@ public sealed class TimeZoneTool : BaseMapsTool
 
             return ResponseHelper.CreateSuccessResponse(new
             {
-                query = new { latitude, longitude, includeTransitions = includeTransitionsOk.Value },
-                summary,
-                raw = doc.RootElement
+                query = new { latitude, longitude, includeTransitions },
+                summary
             });
         }
         catch (Exception ex)

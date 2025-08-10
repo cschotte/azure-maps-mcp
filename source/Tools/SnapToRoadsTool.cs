@@ -44,14 +44,14 @@ public sealed class SnapToRoadsTool : BaseMapsTool
         LatLon[] points,
         [McpToolProperty(
             "includeSpeedLimit",
-            "string",
-            "Include speed limit in km/h. 'true' or 'false'. Default: false")]
-        string includeSpeedLimit = "false",
+            "boolean",
+            "Include speed limit in km/h. Default: false")]
+        bool includeSpeedLimit = false,
         [McpToolProperty(
             "interpolate",
-            "string",
-            "Interpolate additional points to smooth the path. 'true' or 'false'. Default: false")]
-        string interpolate = "false",
+            "boolean",
+            "Interpolate additional points to smooth the path. Default: false")]
+        bool interpolate = false,
         [McpToolProperty(
             "travelMode",
             "string",
@@ -74,13 +74,7 @@ public sealed class SnapToRoadsTool : BaseMapsTool
                 throw new ArgumentException($"Consecutive points {farIndex} and {farIndex + 1} are more than 6 km apart", nameof(points));
 
             // Validate booleans
-            var includeSpeedLimitVal = ValidationHelper.ValidateBooleanString(includeSpeedLimit, nameof(includeSpeedLimit));
-            if (!includeSpeedLimitVal.IsValid)
-                throw new ArgumentException(includeSpeedLimitVal.ErrorMessage!, nameof(includeSpeedLimit));
-
-            var interpolateVal = ValidationHelper.ValidateBooleanString(interpolate, nameof(interpolate));
-            if (!interpolateVal.IsValid)
-                throw new ArgumentException(interpolateVal.ErrorMessage!, nameof(interpolate));
+            // booleans already typed
 
             // Validate travel mode (Snap To Roads supports driving | truck)
             var validTravelModes = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "driving", "truck" };
@@ -104,14 +98,14 @@ public sealed class SnapToRoadsTool : BaseMapsTool
             {
                 type = "FeatureCollection",
                 features,
-                includeSpeedLimit = includeSpeedLimitVal.Value,
-                interpolate = interpolateVal.Value,
+                includeSpeedLimit,
+                interpolate,
                 travelMode = mode
             };
 
             var json = JsonSerializer.Serialize(body);
 
-            _logger.LogInformation("Posting SnapToRoads with {Count} points, mode={Mode}, speedLimit={SL}, interpolate={Interp}", points.Length, mode, includeSpeedLimitVal.Value, interpolateVal.Value);
+            _logger.LogInformation("Posting SnapToRoads with {Count} points, mode={Mode}, speedLimit={SL}, interpolate={Interp}", points.Length, mode, includeSpeedLimit, interpolate);
 
             var (ok, respBody, status, reason) = await _restClient.PostJsonAsync("route/snapToRoads?api-version=2025-01-01", json, "application/geo+json");
             if (!ok)
@@ -124,20 +118,18 @@ public sealed class SnapToRoadsTool : BaseMapsTool
             var root = doc.RootElement;
             var summary = BuildSummary(root, points.Length);
             var simplifiedPoints = ExtractPoints(root);
-            var raw = root.Clone();
 
             return new
             {
                 query = new
                 {
                     pointCount = points.Length,
-                    includeSpeedLimit = includeSpeedLimitVal.Value,
-                    interpolate = interpolateVal.Value,
+                    includeSpeedLimit,
+                    interpolate,
                     travelMode = mode
                 },
                 summary,
-                points = simplifiedPoints,
-                raw
+                points = simplifiedPoints
             };
         }, nameof(SnapToRoads), new { pointCount = points?.Length ?? 0, includeSpeedLimit, interpolate, travelMode });
     }

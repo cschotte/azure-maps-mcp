@@ -38,7 +38,7 @@ public sealed class WeatherTool : BaseMapsTool
         ToolInvocationContext context,
         [McpToolProperty("latitude", "number", "Latitude (-90 to 90)")] double latitude,
         [McpToolProperty("longitude", "number", "Longitude (-180 to 180)")] double longitude,
-        [McpToolProperty("unit", "string", "Units: metric | imperial. Default: metric")] string unit = "metric",
+    [McpToolProperty("unit", "string", "Units: metric | imperial. Default: metric")] string unit = "metric",
         [McpToolProperty("duration", "number", "Past hours to include: 0 | 6 | 24. Default: 0")] int duration = 0,
         [McpToolProperty("language", "string", "Optional IETF language tag, e.g. en-US")] string? language = null
     )
@@ -67,7 +67,7 @@ public sealed class WeatherTool : BaseMapsTool
 
             using var doc = JsonDocument.Parse(body);
             var summary = SimplifyCurrent(doc.RootElement);
-            return ResponseHelper.CreateSuccessResponse(new { query = new { latitude, longitude, unit, duration, language }, summary, raw = doc.RootElement });
+            return ResponseHelper.CreateSuccessResponse(new { query = new { latitude, longitude, unit, duration, language }, summary });
         }
         catch (Exception ex)
         {
@@ -84,7 +84,7 @@ public sealed class WeatherTool : BaseMapsTool
         ToolInvocationContext context,
         [McpToolProperty("latitude", "number", "Latitude (-90 to 90)")] double latitude,
         [McpToolProperty("longitude", "number", "Longitude (-180 to 180)")] double longitude,
-        [McpToolProperty("duration", "number", "Hours: 1|12|24|72|120|240 (subject to SKU). Default: 24")] int duration = 24,
+    [McpToolProperty("duration", "number", "Hours: 1|12|24|72|120|240 (subject to SKU). Default: 24")] int duration = 24,
         [McpToolProperty("unit", "string", "Units: metric | imperial. Default: metric")] string unit = "metric",
         [McpToolProperty("language", "string", "Optional IETF language tag, e.g. en-US")] string? language = null
     )
@@ -114,7 +114,7 @@ public sealed class WeatherTool : BaseMapsTool
 
             using var doc = JsonDocument.Parse(body);
             var summary = SimplifyHourly(doc.RootElement);
-            return ResponseHelper.CreateSuccessResponse(new { query = new { latitude, longitude, unit, duration, language }, summary, raw = doc.RootElement });
+            return ResponseHelper.CreateSuccessResponse(new { query = new { latitude, longitude, unit, duration, language }, summary });
         }
         catch (Exception ex)
         {
@@ -131,7 +131,7 @@ public sealed class WeatherTool : BaseMapsTool
         ToolInvocationContext context,
         [McpToolProperty("latitude", "number", "Latitude (-90 to 90)")] double latitude,
         [McpToolProperty("longitude", "number", "Longitude (-180 to 180)")] double longitude,
-        [McpToolProperty("duration", "number", "Days: 1|5|10|25|45. Default: 5")] int duration = 5,
+    [McpToolProperty("duration", "number", "Days: 1|5|10|25|45. Default: 5")] int duration = 5,
         [McpToolProperty("unit", "string", "Units: metric | imperial. Default: metric")] string unit = "metric",
         [McpToolProperty("language", "string", "Optional IETF language tag, e.g. en-US")] string? language = null
     )
@@ -161,7 +161,7 @@ public sealed class WeatherTool : BaseMapsTool
 
             using var doc = JsonDocument.Parse(body);
             var summary = SimplifyDaily(doc.RootElement);
-            return ResponseHelper.CreateSuccessResponse(new { query = new { latitude, longitude, unit, duration, language }, summary, raw = doc.RootElement });
+            return ResponseHelper.CreateSuccessResponse(new { query = new { latitude, longitude, unit, duration, language }, summary });
         }
         catch (Exception ex)
         {
@@ -178,15 +178,12 @@ public sealed class WeatherTool : BaseMapsTool
         ToolInvocationContext context,
         [McpToolProperty("latitude", "number", "Latitude (-90 to 90)")] double latitude,
         [McpToolProperty("longitude", "number", "Longitude (-180 to 180)")] double longitude,
-        [McpToolProperty("language", "string", "Optional IETF language tag, e.g. en-US")] string? language = null,
-        [McpToolProperty("details", "string", "Return full area-specific details: true|false. Default: true")] string details = "true"
+    [McpToolProperty("language", "string", "Optional IETF language tag, e.g. en-US")] string? language = null,
+    [McpToolProperty("details", "boolean", "Return full area-specific details. Default: true")] bool details = true
     )
     {
         var coordError = ValidateCoordinates(latitude, longitude);
         if (coordError != null) return coordError;
-
-        var detailsOk = ValidationHelper.ValidateBooleanString(details, "details");
-        if (!detailsOk.IsValid) return ResponseHelper.CreateValidationError(detailsOk.ErrorMessage!);
 
         try
         {
@@ -196,14 +193,14 @@ public sealed class WeatherTool : BaseMapsTool
                 {
                     { "api-version", "1.1" },
                     { "query", $"{latitude.ToString(CultureInfo.InvariantCulture)},{longitude.ToString(CultureInfo.InvariantCulture)}" },
-                    { "details", detailsOk.Value ? "true" : "false" },
+            { "details", details ? "true" : "false" },
                     { "language", string.IsNullOrWhiteSpace(language) ? null : language }
                 });
             if (!ok) return ResponseHelper.CreateErrorResponse($"Weather API error: {status} {reason}", new { status, response = SafeParse(body) });
 
             using var doc = JsonDocument.Parse(body);
             var summary = SimplifyAlerts(doc.RootElement);
-            return ResponseHelper.CreateSuccessResponse(new { query = new { latitude, longitude, language, details = detailsOk.Value }, summary, raw = doc.RootElement });
+        return ResponseHelper.CreateSuccessResponse(new { query = new { latitude, longitude, language, details }, summary });
         }
         catch (Exception ex)
         {

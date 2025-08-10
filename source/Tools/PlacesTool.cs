@@ -160,7 +160,7 @@ public sealed class PlacesTool : BaseMapsTool
             }
             catch { }
 
-            return new { summary = new { total } , raw = doc.RootElement };
+            return new { summary = new { total } };
         }, "Places.Categories");
     }
 
