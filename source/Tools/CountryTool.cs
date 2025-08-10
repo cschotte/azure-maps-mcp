@@ -38,49 +38,35 @@ public class CountryTool : BaseMapsTool
             "ISO 3166-1 alpha-2/alpha-3. Examples: US, USA, GB, GBR."
         )] string countryCode)
     {
-        // Basic validation
-        if (string.IsNullOrWhiteSpace(countryCode))
-            return Task.FromResult(ResponseHelper.CreateErrorResponse("Country code is required"));
-
-        var code = countryCode.Trim();
-        if (code.Length is < 2 or > 3 || !code.All(char.IsLetter))
-            return Task.FromResult(ResponseHelper.CreateErrorResponse("Country code must be 2 or 3 letters"));
-
-        // Normalize to alpha-2 if alpha-3 provided
-        if (code.Length == 3)
+    return ExecuteWithErrorHandling(() =>
         {
-            var two = ToolsHelper.ConvertThreeLetterToTwoLetter(code);
-            if (!string.IsNullOrEmpty(two)) code = two;
-        }
+            if (string.IsNullOrWhiteSpace(countryCode))
+                throw new ArgumentException("Country code is required", nameof(countryCode));
 
-        code = code.ToUpperInvariant();
-        var country = _countryHelper.GetCountryByCode(code);
-        if (country == null)
-        {
-            // Simple suggestions by similarity
-            try
+            var code = countryCode.Trim();
+            if (code.Length is < 2 or > 3 || !code.All(char.IsLetter))
+                throw new ArgumentException("Country code must be 2 or 3 letters", nameof(countryCode));
+
+            // Normalize to alpha-2 if alpha-3 provided
+            if (code.Length == 3)
             {
-                var suggestions = _countryHelper.GetCountryData()
-                    .Select(c => new { c.CountryShortCode, c.CountryName, sim = ToolsHelper.CalculateStringSimilarity(c.CountryShortCode, code) })
-                    .Where(x => x.sim > 0.5)
-                    .OrderByDescending(x => x.sim)
-                    .Take(5)
-                    .Select(x => new { code = x.CountryShortCode, name = x.CountryName })
-                    .ToList();
-
-                return Task.FromResult(ResponseHelper.CreateErrorResponse($"No country found for '{code}'", new { suggestions }));
+                var two = ToolsHelper.ConvertThreeLetterToTwoLetter(code);
+                if (!string.IsNullOrEmpty(two)) code = two;
             }
-            catch
+
+            code = code.ToUpperInvariant();
+            var country = _countryHelper.GetCountryByCode(code);
+            if (country == null)
             {
-                return Task.FromResult(ResponseHelper.CreateErrorResponse($"No country found for '{code}'"));
+                throw new ArgumentException($"No country found for '{code}'", nameof(countryCode));
             }
-        }
 
-    _logger.LogInformation("Country found: {Code} - {Name}", country.CountryShortCode, country.CountryName);
-        return Task.FromResult(ResponseHelper.CreateSuccessResponse(new
-        {
-            country = new { code = country.CountryShortCode, name = country.CountryName }
-        }));
+            _logger.LogInformation("Country found: {Code} - {Name}", country.CountryShortCode, country.CountryName);
+            return Task.FromResult<object>(new
+            {
+                country = new { code = country.CountryShortCode, name = country.CountryName }
+            });
+        }, nameof(GetCountryInfo), new { countryCode });
     }
 
     /// <summary>
@@ -103,29 +89,35 @@ public class CountryTool : BaseMapsTool
             "1..50 (default 10)"
         )] int maxResults = 10)
     {
-        if (string.IsNullOrWhiteSpace(searchTerm))
-            return Task.FromResult(ResponseHelper.CreateErrorResponse("Search term is required"));
-
-        var normalized = searchTerm.Trim();
-        if (normalized.Length < 2)
-            return Task.FromResult(ResponseHelper.CreateErrorResponse("Search term must be at least 2 characters"));
-
-        var range = ValidationHelper.ValidateRange(maxResults, 1, 50, nameof(maxResults));
-        maxResults = range.NormalizedValue;
-
-        var results = _countryHelper.GetCountryData()
-            .Select(c => new { code = c.CountryShortCode, name = c.CountryName })
-            .Where(c => c.code.Contains(normalized, StringComparison.OrdinalIgnoreCase) ||
-                        c.name.Contains(normalized, StringComparison.OrdinalIgnoreCase))
-            .OrderBy(c => c.name)
-            .Take(maxResults)
-            .ToList();
-
-        return Task.FromResult(ResponseHelper.CreateSuccessResponse(new
+    return ExecuteWithErrorHandling(() =>
         {
-            term = normalized,
-            count = results.Count,
-            results
-        }));
+            if (string.IsNullOrWhiteSpace(searchTerm))
+                throw new ArgumentException("Search term is required", nameof(searchTerm));
+
+            var normalized = searchTerm.Trim();
+            if (normalized.Length < 2)
+                throw new ArgumentException("Search term must be at least 2 characters", nameof(searchTerm));
+
+            var range = ValidationHelper.ValidateRange(maxResults, 1, 50, nameof(maxResults));
+            if (!range.IsValid)
+                throw new ArgumentException(range.ErrorMessage ?? "Invalid maxResults", nameof(maxResults));
+
+            maxResults = range.NormalizedValue;
+
+            var results = _countryHelper.GetCountryData()
+                .Select(c => new { code = c.CountryShortCode, name = c.CountryName })
+                .Where(c => c.code.Contains(normalized, StringComparison.OrdinalIgnoreCase) ||
+                            c.name.Contains(normalized, StringComparison.OrdinalIgnoreCase))
+                .OrderBy(c => c.name)
+                .Take(maxResults)
+                .ToList();
+
+            return Task.FromResult<object>(new
+            {
+                term = normalized,
+                count = results.Count,
+                results
+            });
+        }, nameof(FindCountries), new { searchTerm, maxResults });
     }
 }

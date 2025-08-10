@@ -2,12 +2,9 @@
 // Licensed under the MIT License.
 
 using System.Globalization;
-using System.Net;
-using System.Net.Http;
 using System.Text.Json;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Azure.Functions.Worker.Extensions.Mcp;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Azure.Maps.Mcp.Common;
 using Azure.Maps.Mcp.Common.Models;
@@ -20,28 +17,22 @@ namespace Azure.Maps.Mcp.Tools;
 /// </summary>
 public sealed class SnapToRoadsTool : BaseMapsTool
 {
-    private readonly IHttpClientFactory _httpClientFactory;
-    private readonly string _subscriptionKey;
+    private readonly AtlasRestClient _restClient;
 
     public SnapToRoadsTool(
         IAzureMapsService mapsService,
         ILogger<SnapToRoadsTool> logger,
-        IHttpClientFactory httpClientFactory,
-        IConfiguration configuration)
+        AtlasRestClient restClient)
         : base(mapsService, logger)
     {
-        _httpClientFactory = httpClientFactory;
-        _subscriptionKey =
-            configuration["AZURE_MAPS_SUBSCRIPTION_KEY"] ??
-            configuration["Values:AZURE_MAPS_SUBSCRIPTION_KEY"] ??
-            throw new InvalidOperationException("AZURE_MAPS_SUBSCRIPTION_KEY is required for Snap To Roads API calls");
+        _restClient = restClient;
     }
 
     /// <summary>
     /// Snap GPS points to the nearest roads and optionally interpolate and include speed limits.
     /// </summary>
     [Function(nameof(SnapToRoads))]
-    public async Task<string> SnapToRoads(
+    public Task<string> SnapToRoads(
         [McpToolTrigger(
             "snap_to_roads",
             "Snap GPS points to the road network; returns snapped/interpolated points with road names and optional speed limits.")]
@@ -67,52 +58,35 @@ public sealed class SnapToRoadsTool : BaseMapsTool
             "Routing profile for snapping: 'driving' or 'truck'. Default: driving")]
         string travelMode = "driving")
     {
-        // Validate input points
-        var coordsValidation = ValidationHelper.ValidateCoordinateArray(points, p => (p.Latitude, p.Longitude), 2);
-        if (!coordsValidation.IsValid)
+        return ExecuteWithErrorHandling(async () =>
         {
-            return ResponseHelper.CreateValidationError(coordsValidation.ErrorMessage!);
-        }
+            // Validate input points
+            var coordsValidation = ValidationHelper.ValidateCoordinateArray(points, p => (p.Latitude, p.Longitude), 2);
+            if (!coordsValidation.IsValid)
+                throw new ArgumentException(coordsValidation.ErrorMessage!, nameof(points));
 
-        if (points.Length > 100)
-        {
-            return ResponseHelper.CreateValidationError("A maximum of 100 points are allowed");
-        }
+            if (points.Length > 100)
+                throw new ArgumentException("A maximum of 100 points are allowed", nameof(points));
 
-        // Validate consecutive distance (<= 6 km) – quick client-side check
-        var farIndex = FindFirstConsecutiveDistanceExceeding(points, 6.0);
-        if (farIndex >= 0)
-        {
-            return ResponseHelper.CreateValidationError($"Consecutive points {farIndex} and {farIndex + 1} are more than 6 km apart");
-        }
+            // Validate consecutive distance (<= 6 km) – quick client-side check
+            var farIndex = FindFirstConsecutiveDistanceExceeding(points, 6.0);
+            if (farIndex >= 0)
+                throw new ArgumentException($"Consecutive points {farIndex} and {farIndex + 1} are more than 6 km apart", nameof(points));
 
-        // Validate booleans
-        var includeSpeedLimitVal = ValidationHelper.ValidateBooleanString(includeSpeedLimit, nameof(includeSpeedLimit));
-        if (!includeSpeedLimitVal.IsValid)
-        {
-            return ResponseHelper.CreateValidationError(includeSpeedLimitVal.ErrorMessage!);
-        }
+            // Validate booleans
+            var includeSpeedLimitVal = ValidationHelper.ValidateBooleanString(includeSpeedLimit, nameof(includeSpeedLimit));
+            if (!includeSpeedLimitVal.IsValid)
+                throw new ArgumentException(includeSpeedLimitVal.ErrorMessage!, nameof(includeSpeedLimit));
 
-        var interpolateVal = ValidationHelper.ValidateBooleanString(interpolate, nameof(interpolate));
-        if (!interpolateVal.IsValid)
-        {
-            return ResponseHelper.CreateValidationError(interpolateVal.ErrorMessage!);
-        }
+            var interpolateVal = ValidationHelper.ValidateBooleanString(interpolate, nameof(interpolate));
+            if (!interpolateVal.IsValid)
+                throw new ArgumentException(interpolateVal.ErrorMessage!, nameof(interpolate));
 
-        // Validate travel mode (Snap To Roads supports driving | truck)
-        var validTravelModes = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "driving", "truck" };
-        var mode = string.IsNullOrWhiteSpace(travelMode) ? "driving" : travelMode.Trim();
-        if (!validTravelModes.Contains(mode))
-        {
-            return ResponseHelper.CreateValidationError("Invalid travelMode. Use 'driving' or 'truck'");
-        }
-
-        try
-        {
-            var client = _httpClientFactory.CreateClient();
-            client.BaseAddress = new Uri("https://atlas.microsoft.com/");
-
-            var url = $"route/snapToRoads?api-version=2025-01-01&subscription-key={WebUtility.UrlEncode(_subscriptionKey)}";
+            // Validate travel mode (Snap To Roads supports driving | truck)
+            var validTravelModes = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "driving", "truck" };
+            var mode = string.IsNullOrWhiteSpace(travelMode) ? "driving" : travelMode.Trim();
+            if (!validTravelModes.Contains(mode))
+                throw new ArgumentException("Invalid travelMode. Use 'driving' or 'truck'", nameof(travelMode));
 
             // Build GeoJSON FeatureCollection body
             var features = points.Select(p => new
@@ -121,11 +95,7 @@ public sealed class SnapToRoadsTool : BaseMapsTool
                 geometry = new
                 {
                     type = "Point",
-                    coordinates = new[]
-                    {
-                        p.Longitude,
-                        p.Latitude
-                    }
+                    coordinates = new[] { p.Longitude, p.Latitude }
                 },
                 properties = new { }
             }).ToList();
@@ -141,31 +111,22 @@ public sealed class SnapToRoadsTool : BaseMapsTool
 
             var json = JsonSerializer.Serialize(body);
 
-            using var req = new HttpRequestMessage(HttpMethod.Post, url)
-            {
-                Content = new StringContent(json, System.Text.Encoding.UTF8, "application/geo+json")
-            };
-            req.Headers.Add("Accept", "application/json");
-
             _logger.LogInformation("Posting SnapToRoads with {Count} points, mode={Mode}, speedLimit={SL}, interpolate={Interp}", points.Length, mode, includeSpeedLimitVal.Value, interpolateVal.Value);
 
-            using var resp = await client.SendAsync(req);
-            var respBody = await resp.Content.ReadAsStringAsync();
-
-            if (!resp.IsSuccessStatusCode)
+            var (ok, respBody, status, reason) = await _restClient.PostJsonAsync("route/snapToRoads?api-version=2025-01-01", json, "application/geo+json");
+            if (!ok)
             {
-                _logger.LogWarning("SnapToRoads API returned {Status}: {Body}", (int)resp.StatusCode, respBody);
-                return ResponseHelper.CreateErrorResponse(
-                    $"SnapToRoads API error: {(int)resp.StatusCode} {resp.ReasonPhrase}",
-                    new { status = (int)resp.StatusCode, response = SafeParse(respBody) });
+                _logger.LogWarning("SnapToRoads API returned {Status}: {Body}", status, respBody);
+                throw new Azure.RequestFailedException(status, $"SnapToRoads API error: {status} {reason}", new Exception(respBody));
             }
 
             using var doc = JsonDocument.Parse(respBody);
             var root = doc.RootElement;
             var summary = BuildSummary(root, points.Length);
             var simplifiedPoints = ExtractPoints(root);
+            var raw = root.Clone();
 
-            return ResponseHelper.CreateSuccessResponse(new
+            return new
             {
                 query = new
                 {
@@ -176,14 +137,9 @@ public sealed class SnapToRoadsTool : BaseMapsTool
                 },
                 summary,
                 points = simplifiedPoints,
-                raw = root
-            });
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to call SnapToRoads API");
-            return ResponseHelper.CreateErrorResponse("Failed to snap points to roads");
-        }
+                raw
+            };
+        }, nameof(SnapToRoads), new { pointCount = points?.Length ?? 0, includeSpeedLimit, interpolate, travelMode });
     }
 
     private static object? SafeParse(string json)
