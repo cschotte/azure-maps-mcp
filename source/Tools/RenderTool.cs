@@ -9,6 +9,7 @@ using Azure.Maps.Mcp.Common;
 using Azure.Maps.Rendering;
 using System.Text.Json;
 using Azure.Maps.Mcp.Common.Models;
+using Microsoft.Extensions.Logging;
 
 namespace Azure.Maps.Mcp.Tools;
 
@@ -18,9 +19,15 @@ public record PathInfo(LatLon[]? Coordinates, string? Color = null, int Width = 
 /// <summary>
 /// Azure Maps Rendering Tool providing map rendering capabilities
 /// </summary>
-public class RenderTool(IAzureMapsService azureMapsService)
+public class RenderTool : BaseMapsTool
 {
-    private readonly MapsRenderingClient _renderingClient = azureMapsService.RenderingClient;
+    private readonly MapsRenderingClient _renderingClient;
+
+    public RenderTool(IAzureMapsService mapsService, ILogger<RenderTool> logger)
+        : base(mapsService, logger)
+    {
+        _renderingClient = mapsService.RenderingClient;
+    }
 
     /// <summary>
     /// Generate a static map image with optional markers and paths
@@ -68,38 +75,38 @@ public class RenderTool(IAzureMapsService azureMapsService)
         )] PathInfo[]? paths = null
     )
     {
-        try
+        return await ExecuteWithErrorHandling(async () =>
         {
             // Parse and validate bounding box using shared helper
             if (!ToolsHelper.TryParseBoundingBox(boundingBox, out var parsedBbox, out var bboxError))
-                return ResponseHelper.CreateErrorResponse(bboxError!);
+                throw new ArgumentException(bboxError);
             var geoBoundingBox = parsedBbox!;
 
             // Validate parameters
             var zoomValidation = ValidationHelper.ValidateRange(zoomLevel, 1, 20, "zoom level");
             if (!zoomValidation.IsValid)
-                return ResponseHelper.CreateErrorResponse(zoomValidation.ErrorMessage!);
+                throw new ArgumentException(zoomValidation.ErrorMessage);
 
             var widthValidation = ValidationHelper.ValidateRange(width, 1, 8192, "width");
             if (!widthValidation.IsValid)
-                return ResponseHelper.CreateErrorResponse(widthValidation.ErrorMessage!);
+                throw new ArgumentException(widthValidation.ErrorMessage);
 
             var heightValidation = ValidationHelper.ValidateRange(height, 1, 8192, "height");
             if (!heightValidation.IsValid)
-                return ResponseHelper.CreateErrorResponse(heightValidation.ErrorMessage!);
+                throw new ArgumentException(heightValidation.ErrorMessage);
 
             var validStyles = new HashSet<string>(new[] { "road", "satellite", "hybrid" }, StringComparer.OrdinalIgnoreCase);
             if (!validStyles.Contains(mapStyle))
-                return ResponseHelper.CreateErrorResponse($"Map style must be one of: {string.Join(", ", validStyles)}");
-            
+                throw new ArgumentException($"Map style must be one of: {string.Join(", ", validStyles)}");
+
             var pushpinStyles = new List<ImagePushpinStyle>();
             var pathStyles = new List<ImagePathStyle>();
 
-        // Process markers if provided
-        if (markers?.Length > 0)
+            // Process markers if provided
+            if (markers?.Length > 0)
             {
                 var pushpinPositions = markers
-            .Select(m => new PushpinPosition(m.Position.Longitude, m.Position.Latitude, m.Label ?? string.Empty))
+                    .Select(m => new PushpinPosition(m.Position.Longitude, m.Position.Latitude, m.Label ?? string.Empty))
                     .ToList();
 
                 if (pushpinPositions.Count > 0)
@@ -133,36 +140,25 @@ public class RenderTool(IAzureMapsService azureMapsService)
             };
 
             var response = await _renderingClient.GetMapStaticImageAsync(staticImageOptions);
-
-            if (response.Value != null)
+            if (response.Value == null)
             {
-                using var memoryStream = new MemoryStream();
-                await response.Value.CopyToAsync(memoryStream);
-                var imageBytes = memoryStream.ToArray();
-                var base64Image = Convert.ToBase64String(imageBytes);
-
-                var result = new
-                {
-                    image_data_uri = $"data:image/png;base64,{base64Image}",
-                    size_bytes = imageBytes.Length,
-                    dimensions = new { width, height },
-                    zoom_level = zoomLevel,
-                    markers_count = markers?.Length ?? 0,
-                    paths_count = paths?.Length ?? 0
-                };
-
-                return ResponseHelper.CreateSuccessResponse(result);
+                throw new InvalidOperationException("No image data returned from Azure Maps");
             }
 
-            return ResponseHelper.CreateErrorResponse("No image data returned from Azure Maps");
-        }
-        catch (RequestFailedException ex)
-        {
-            return ResponseHelper.CreateErrorResponse($"Azure Maps API error: {ex.Message}");
-        }
-        catch (Exception)
-        {
-            return ResponseHelper.CreateErrorResponse("Failed to generate static map image");
-        }
+            using var memoryStream = new MemoryStream();
+            await response.Value.CopyToAsync(memoryStream);
+            var imageBytes = memoryStream.ToArray();
+            var base64Image = Convert.ToBase64String(imageBytes);
+
+            return new
+            {
+                image_data_uri = $"data:image/png;base64,{base64Image}",
+                size_bytes = imageBytes.Length,
+                dimensions = new { width, height },
+                zoom_level = zoomLevel,
+                markers_count = markers?.Length ?? 0,
+                paths_count = paths?.Length ?? 0
+            };
+        }, nameof(GetStaticMapImage), new { zoomLevel, width, height, mapStyle });
     }
 }

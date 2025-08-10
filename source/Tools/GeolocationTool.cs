@@ -17,10 +17,17 @@ namespace Azure.Maps.Mcp.Tools;
 /// <summary>
 /// Azure Maps Geolocation Tool providing IP-based geolocation and country code lookup capabilities
 /// </summary>
-public class GeolocationTool(IAzureMapsService azureMapsService, ILogger<GeolocationTool> logger, CountryHelper countryHelper)
+public class GeolocationTool : BaseMapsTool
 {
-    private readonly MapsGeolocationClient _geolocationClient = azureMapsService.GeolocationClient;
-    private readonly CountryHelper _countryHelper = countryHelper;
+    private readonly MapsGeolocationClient _geolocationClient;
+    private readonly CountryHelper _countryHelper;
+
+    public GeolocationTool(IAzureMapsService mapsService, ILogger<GeolocationTool> logger, CountryHelper countryHelper)
+        : base(mapsService, logger)
+    {
+        _geolocationClient = mapsService.GeolocationClient;
+        _countryHelper = countryHelper;
+    }
 
     /// <summary>
     /// Get country code and location information for an IP address with enhanced context
@@ -38,25 +45,25 @@ public class GeolocationTool(IAzureMapsService azureMapsService, ILogger<Geoloca
         )] string ipAddress
     )
     {
-        try
+        return await ExecuteWithErrorHandling(async () =>
         {
             // Validate input
             var validation = ValidationHelper.ValidateIPAddress(ipAddress);
             if (!validation.IsValid)
-                return ResponseHelper.CreateErrorResponse(validation.ErrorMessage!);
+                throw new ArgumentException(validation.ErrorMessage);
 
             var parsedIP = validation.ParsedIP!;
-            
+
             // Check if IP is suitable for geolocation
             if (ValidationHelper.IsPrivateIP(parsedIP) || IPAddress.IsLoopback(parsedIP))
             {
-                var message = IPAddress.IsLoopback(parsedIP) 
+                var message = IPAddress.IsLoopback(parsedIP)
                     ? "Loopback address refers to local machine and cannot be geolocated"
                     : "Private IP address cannot be geolocated";
-                return ResponseHelper.CreateErrorResponse(message);
+                throw new ArgumentException(message);
             }
 
-            logger.LogInformation("Processing geolocation request for IP: {IPAddress}", ipAddress);
+            _logger.LogInformation("Processing geolocation request for IP: {IPAddress}", ipAddress);
 
             // Call Azure Maps API
             var response = await _geolocationClient.GetCountryCodeAsync(parsedIP);
@@ -64,31 +71,20 @@ public class GeolocationTool(IAzureMapsService azureMapsService, ILogger<Geoloca
             if (response?.Value?.IsoCode != null)
             {
                 var country = _countryHelper.GetCountryByCode(response.Value.IsoCode);
-
                 if (country != null)
                 {
-                    logger.LogInformation("Country for IP resolved: {Code}", country.CountryShortCode);
-                    return ResponseHelper.CreateSuccessResponse(new
+                    _logger.LogInformation("Country for IP resolved: {Code}", country.CountryShortCode);
+                    return new
                     {
                         query = new { ipAddress, ipType = parsedIP.AddressFamily.ToString(), isPublic = true },
                         country = new { code = country.CountryShortCode, name = country.CountryName }
-                    });
+                    };
                 }
             }
 
-            // No results found
-            return ResponseHelper.CreateErrorResponse("No country data available for this IP address", new { ipAddress });
-        }
-        catch (RequestFailedException ex)
-        {
-            logger.LogError(ex, "Azure Maps API error for IP: {IPAddress}", ipAddress);
-            return ResponseHelper.CreateErrorResponse($"API Error: {ex.Message}");
-        }
-        catch (Exception ex)
-        {
-            logger.LogError(ex, "Unexpected error during geolocation lookup for IP: {IPAddress}", ipAddress);
-            return ResponseHelper.CreateErrorResponse("An unexpected error occurred");
-        }
+            throw new InvalidOperationException("No country data available for this IP address");
+
+        }, nameof(GetCountryCodeByIP), new { ipAddress });
     }
 
     /// <summary>
@@ -107,20 +103,20 @@ public class GeolocationTool(IAzureMapsService azureMapsService, ILogger<Geoloca
         )] string[] ipAddresses
     )
     {
-        try
+        return await ExecuteWithErrorHandling(async () =>
         {
             // Validate input
             var validation = ValidationHelper.ValidateArrayInput(ipAddresses, 100, "IP address");
             if (!validation.IsValid)
-                return ResponseHelper.CreateErrorResponse(validation.ErrorMessage!);
+                throw new ArgumentException(validation.ErrorMessage);
 
             var uniqueIPs = validation.UniqueValues!;
-            
-            logger.LogInformation("Processing batch geolocation for {Count} unique IP addresses", uniqueIPs.Count);
+
+            _logger.LogInformation("Processing batch geolocation for {Count} unique IP addresses", uniqueIPs.Count);
 
             // Process IPs in parallel
             var results = await ProcessIPAddressesBatch(uniqueIPs);
-            
+
             var okItems = results.Where(r => r.IsSuccess && r.Country != null)
                 .Select(r => new { ip = r.IPAddress, code = r.Country!.CountryShortCode, name = r.Country!.CountryName })
                 .ToList();
@@ -136,17 +132,12 @@ public class GeolocationTool(IAzureMapsService azureMapsService, ILogger<Geoloca
                 rate = ipAddresses.Length > 0 ? Math.Round((double)okItems.Count / ipAddresses.Length * 100, 1) : 0,
                 items = new { ok = okItems, fail = failItems }
             };
-            
-            logger.LogInformation("Completed batch geolocation: {Success}/{Total} successful", 
+
+            _logger.LogInformation("Completed batch geolocation: {Success}/{Total} successful",
                 okItems.Count, uniqueIPs.Count);
 
-            return ResponseHelper.CreateSuccessResponse(response);
-        }
-        catch (Exception ex)
-        {
-            logger.LogError(ex, "Error during batch geolocation");
-            return ResponseHelper.CreateErrorResponse("Batch processing error");
-        }
+            return response;
+        }, nameof(GetCountryCodeBatch), new { count = ipAddresses?.Length ?? 0 });
     }
 
     /// <summary>
@@ -254,7 +245,7 @@ public class GeolocationTool(IAzureMapsService azureMapsService, ILogger<Geoloca
     /// Validate IP address format and get basic information
     /// </summary>
     [Function(nameof(ValidateIPAddress))]
-    public Task<string> ValidateIPAddress(
+    public async Task<string> ValidateIPAddress(
         [McpToolTrigger(
             "geolocation_ip_validate",
             "Validate IPv4/IPv6 and basic traits (public/private, loopback)."
@@ -266,11 +257,11 @@ public class GeolocationTool(IAzureMapsService azureMapsService, ILogger<Geoloca
         )] string ipAddress
     )
     {
-        try
+        return await ExecuteWithErrorHandling(async () =>
         {
             var validation = ValidationHelper.ValidateIPAddress(ipAddress);
             if (!validation.IsValid)
-                return Task.FromResult(ResponseHelper.CreateErrorResponse(validation.ErrorMessage!));
+                throw new ArgumentException(validation.ErrorMessage);
 
             var parsedIP = validation.ParsedIP!;
             var result = new
@@ -285,14 +276,9 @@ public class GeolocationTool(IAzureMapsService azureMapsService, ILogger<Geoloca
                 geo = !ValidationHelper.IsPrivateIP(parsedIP) && !IPAddress.IsLoopback(parsedIP)
             };
 
-            logger.LogInformation("Successfully validated IP address: {IPAddress}", ipAddress);
-            return Task.FromResult(ResponseHelper.CreateSuccessResponse(result));
-        }
-        catch (Exception ex)
-        {
-            logger.LogError(ex, "Error during IP validation");
-            return Task.FromResult(ResponseHelper.CreateErrorResponse("Validation error"));
-        }
+            _logger.LogInformation("Successfully validated IP address: {IPAddress}", ipAddress);
+            return await Task.FromResult(result);
+        }, nameof(ValidateIPAddress), new { ipAddress });
     }
 
     /// <summary>

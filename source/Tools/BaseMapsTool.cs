@@ -29,20 +29,27 @@ public abstract class BaseMapsTool
         string operationName,
         object? context = null)
     {
+        var requestId = Guid.NewGuid().ToString("N");
         try
         {
+            _logger.LogInformation("{Operation} started. requestId={RequestId}", operationName, requestId);
             var result = await operation();
-            return ResponseHelper.CreateSuccessResponse(result);
+            return ResponseHelper.CreateSuccessResponse(result, requestId);
         }
         catch (Azure.RequestFailedException ex)
         {
-            _logger.LogError(ex, "Azure Maps API error during {Operation}: {Message}", operationName, ex.Message);
-            return ResponseHelper.CreateErrorResponse($"API Error: {ex.Message}", context);
+            _logger.LogError(ex, "Azure Maps API error during {Operation}. requestId={RequestId}. {Message}", operationName, requestId, ex.Message);
+            return ResponseHelper.CreateErrorResponse($"API Error: {ex.Message}", context, requestId);
+        }
+        catch (ArgumentException ex)
+        {
+            _logger.LogWarning(ex, "Validation error during {Operation}. requestId={RequestId}: {Message}", operationName, requestId, ex.Message);
+            return ResponseHelper.CreateErrorResponse(ex.Message, context, requestId);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Unexpected error during {Operation}", operationName);
-            return ResponseHelper.CreateErrorResponse("An unexpected error occurred", context);
+            _logger.LogError(ex, "Unexpected error during {Operation}. requestId={RequestId}", operationName, requestId);
+            return ResponseHelper.CreateErrorResponse("An unexpected error occurred", context, requestId);
         }
     }
 

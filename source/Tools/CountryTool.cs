@@ -13,9 +13,15 @@ namespace Azure.Maps.Mcp.Tools;
 /// <summary>
 /// Country-related utilities split out to keep other tools small and focused
 /// </summary>
-public class CountryTool(ILogger<CountryTool> logger, CountryHelper countryHelper)
+public class CountryTool : BaseMapsTool
 {
-    private readonly CountryHelper _countryHelper = countryHelper;
+    private readonly CountryHelper _countryHelper;
+
+    public CountryTool(ILogger<CountryTool> logger, CountryHelper countryHelper, Azure.Maps.Mcp.Services.IAzureMapsService mapsService)
+        : base(mapsService, logger)
+    {
+        _countryHelper = countryHelper;
+    }
 
     /// <summary>
     /// Get country info by ISO code (alpha-2 or alpha-3)
@@ -70,7 +76,7 @@ public class CountryTool(ILogger<CountryTool> logger, CountryHelper countryHelpe
             }
         }
 
-        logger.LogInformation("Country found: {Code} - {Name}", country.CountryShortCode, country.CountryName);
+    _logger.LogInformation("Country found: {Code} - {Name}", country.CountryShortCode, country.CountryName);
         return Task.FromResult(ResponseHelper.CreateSuccessResponse(new
         {
             country = new { code = country.CountryShortCode, name = country.CountryName }

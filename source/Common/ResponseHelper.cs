@@ -10,20 +10,42 @@ namespace Azure.Maps.Mcp.Common;
 /// </summary>
 public static class ResponseHelper
 {
+    private static object BuildMeta(string? requestId = null)
+    {
+        return new
+        {
+            requestId = string.IsNullOrWhiteSpace(requestId) ? Guid.NewGuid().ToString("N") : requestId,
+            timestamp = DateTimeOffset.UtcNow.ToString("O")
+        };
+    }
+
     /// <summary>
     /// Creates a success response with data
     /// </summary>
     public static string CreateSuccessResponse(object data)
+        => CreateSuccessResponse(data, null);
+
+    /// <summary>
+    /// Creates a success response with data and meta (timestamp, requestId)
+    /// </summary>
+    public static string CreateSuccessResponse(object data, string? requestId)
     {
-        return JsonSerializer.Serialize(new { success = true, data }, new JsonSerializerOptions { WriteIndented = false });
+        var response = new { success = true, meta = BuildMeta(requestId), data };
+        return JsonSerializer.Serialize(response, new JsonSerializerOptions { WriteIndented = false });
     }
 
     /// <summary>
     /// Creates an error response
     /// </summary>
     public static string CreateErrorResponse(string error, object? context = null)
+        => CreateErrorResponse(error, context, null);
+
+    /// <summary>
+    /// Creates an error response with meta (timestamp, requestId)
+    /// </summary>
+    public static string CreateErrorResponse(string error, object? context, string? requestId)
     {
-    var response = new { success = false, error, context };
+        var response = new { success = false, meta = BuildMeta(requestId), error, context };
         return JsonSerializer.Serialize(response, new JsonSerializerOptions { WriteIndented = false });
     }
 
@@ -83,7 +105,12 @@ public static class ResponseHelper
     /// </summary>
     public static string CreateValidationError(string error, List<string>? suggestions = null)
     {
-    var response = new Dictionary<string, object> { ["success"] = false, ["error"] = error };
+        var response = new Dictionary<string, object>
+        {
+            ["success"] = false,
+            ["meta"] = BuildMeta(),
+            ["error"] = error
+        };
         
         if (suggestions?.Any() == true)
             response["suggestions"] = suggestions.Take(3).ToList();

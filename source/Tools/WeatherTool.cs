@@ -3,7 +3,6 @@
 
 using System.Globalization;
 using System.Net;
-using System.Net.Http;
 using System.Text.Json;
 using Microsoft.Azure.Functions.Worker;
 using Microsoft.Azure.Functions.Worker.Extensions.Mcp;
@@ -20,21 +19,15 @@ namespace Azure.Maps.Mcp.Tools;
 /// </summary>
 public sealed class WeatherTool : BaseMapsTool
 {
-    private readonly IHttpClientFactory _httpClientFactory;
-    private readonly string _subscriptionKey;
+    private readonly AtlasRestClient _atlas;
 
     public WeatherTool(
         IAzureMapsService mapsService,
         ILogger<WeatherTool> logger,
-        IHttpClientFactory httpClientFactory,
-        IConfiguration configuration)
+        AtlasRestClient atlas)
         : base(mapsService, logger)
     {
-        _httpClientFactory = httpClientFactory;
-        _subscriptionKey =
-            configuration["AZURE_MAPS_SUBSCRIPTION_KEY"] ??
-            configuration["Values:AZURE_MAPS_SUBSCRIPTION_KEY"] ??
-            throw new InvalidOperationException("AZURE_MAPS_SUBSCRIPTION_KEY is required for Weather API calls");
+        _atlas = atlas;
     }
 
     [Function(nameof(GetCurrentConditions))]
@@ -60,19 +53,17 @@ public sealed class WeatherTool : BaseMapsTool
 
         try
         {
-            var url = BuildUrl(
+            var (ok, body, status, reason) = await _atlas.GetAsync(
                 path: "weather/currentConditions/json",
-                apiVersion: "1.1",
-                latitude, longitude,
-                new()
+                query: new Dictionary<string, string?>
                 {
+                    { "api-version", "1.1" },
+                    { "query", $"{latitude.ToString(CultureInfo.InvariantCulture)},{longitude.ToString(CultureInfo.InvariantCulture)}" },
                     { "unit", unit },
-                    { "duration", duration.ToString() }
-                },
-                language);
-
-            var (ok, body, status, reason) = await SendAsync(url);
-            if (!ok) return ResponseHelper.CreateErrorResponse($"Weather API error: {status} {reason}", new { url, status });
+                    { "duration", duration.ToString() },
+                    { "language", string.IsNullOrWhiteSpace(language) ? null : language }
+                });
+            if (!ok) return ResponseHelper.CreateErrorResponse($"Weather API error: {status} {reason}", new { status, response = SafeParse(body) });
 
             using var doc = JsonDocument.Parse(body);
             var summary = SimplifyCurrent(doc.RootElement);
@@ -109,15 +100,17 @@ public sealed class WeatherTool : BaseMapsTool
 
         try
         {
-            var url = BuildUrl(
+            var (ok, body, status, reason) = await _atlas.GetAsync(
                 path: "weather/forecast/hourly/json",
-                apiVersion: "1.1",
-                latitude, longitude,
-                new() { { "unit", unit }, { "duration", duration.ToString() } },
-                language);
-
-            var (ok, body, status, reason) = await SendAsync(url);
-            if (!ok) return ResponseHelper.CreateErrorResponse($"Weather API error: {status} {reason}", new { url, status });
+                query: new Dictionary<string, string?>
+                {
+                    { "api-version", "1.1" },
+                    { "query", $"{latitude.ToString(CultureInfo.InvariantCulture)},{longitude.ToString(CultureInfo.InvariantCulture)}" },
+                    { "unit", unit },
+                    { "duration", duration.ToString() },
+                    { "language", string.IsNullOrWhiteSpace(language) ? null : language }
+                });
+            if (!ok) return ResponseHelper.CreateErrorResponse($"Weather API error: {status} {reason}", new { status, response = SafeParse(body) });
 
             using var doc = JsonDocument.Parse(body);
             var summary = SimplifyHourly(doc.RootElement);
@@ -154,15 +147,17 @@ public sealed class WeatherTool : BaseMapsTool
 
         try
         {
-            var url = BuildUrl(
+            var (ok, body, status, reason) = await _atlas.GetAsync(
                 path: "weather/forecast/daily/json",
-                apiVersion: "1.1",
-                latitude, longitude,
-                new() { { "unit", unit }, { "duration", duration.ToString() } },
-                language);
-
-            var (ok, body, status, reason) = await SendAsync(url);
-            if (!ok) return ResponseHelper.CreateErrorResponse($"Weather API error: {status} {reason}", new { url, status });
+                query: new Dictionary<string, string?>
+                {
+                    { "api-version", "1.1" },
+                    { "query", $"{latitude.ToString(CultureInfo.InvariantCulture)},{longitude.ToString(CultureInfo.InvariantCulture)}" },
+                    { "unit", unit },
+                    { "duration", duration.ToString() },
+                    { "language", string.IsNullOrWhiteSpace(language) ? null : language }
+                });
+            if (!ok) return ResponseHelper.CreateErrorResponse($"Weather API error: {status} {reason}", new { status, response = SafeParse(body) });
 
             using var doc = JsonDocument.Parse(body);
             var summary = SimplifyDaily(doc.RootElement);
@@ -195,15 +190,16 @@ public sealed class WeatherTool : BaseMapsTool
 
         try
         {
-            var url = BuildUrl(
+            var (ok, body, status, reason) = await _atlas.GetAsync(
                 path: "weather/severe/alerts/json",
-                apiVersion: "1.1",
-                latitude, longitude,
-                new() { { "details", detailsOk.Value ? "true" : "false" } },
-                language);
-
-            var (ok, body, status, reason) = await SendAsync(url);
-            if (!ok) return ResponseHelper.CreateErrorResponse($"Weather API error: {status} {reason}", new { url, status });
+                query: new Dictionary<string, string?>
+                {
+                    { "api-version", "1.1" },
+                    { "query", $"{latitude.ToString(CultureInfo.InvariantCulture)},{longitude.ToString(CultureInfo.InvariantCulture)}" },
+                    { "details", detailsOk.Value ? "true" : "false" },
+                    { "language", string.IsNullOrWhiteSpace(language) ? null : language }
+                });
+            if (!ok) return ResponseHelper.CreateErrorResponse($"Weather API error: {status} {reason}", new { status, response = SafeParse(body) });
 
             using var doc = JsonDocument.Parse(body);
             var summary = SimplifyAlerts(doc.RootElement);
@@ -216,35 +212,17 @@ public sealed class WeatherTool : BaseMapsTool
         }
     }
 
-    private string BuildUrl(string path, string apiVersion, double latitude, double longitude, Dictionary<string, string> extra, string? language)
+    private static object? SafeParse(string json)
     {
-        var q = new List<string>
+        try
         {
-            $"api-version={apiVersion}",
-            $"subscription-key={WebUtility.UrlEncode(_subscriptionKey)}",
-            $"query={latitude.ToString(CultureInfo.InvariantCulture)},{longitude.ToString(CultureInfo.InvariantCulture)}"
-        };
-        if (!string.IsNullOrWhiteSpace(language)) q.Add($"language={WebUtility.UrlEncode(language)}");
-        foreach (var kv in extra)
-        {
-            q.Add($"{kv.Key}={WebUtility.UrlEncode(kv.Value)}");
+            using var d = JsonDocument.Parse(json);
+            return d.RootElement.Clone();
         }
-        return $"https://atlas.microsoft.com/{path}?{string.Join('&', q)}";
-    }
-
-    private async Task<(bool ok, string body, int status, string reason)> SendAsync(string url)
-    {
-        var client = _httpClientFactory.CreateClient();
-        using var req = new HttpRequestMessage(HttpMethod.Get, url);
-        req.Headers.Add("Accept", "application/json");
-        using var resp = await client.SendAsync(req);
-        var body = await resp.Content.ReadAsStringAsync();
-        if (!resp.IsSuccessStatusCode)
+        catch
         {
-            _logger.LogWarning("Weather API error {Status}: {Body}", (int)resp.StatusCode, body);
-            return (false, body, (int)resp.StatusCode, resp.ReasonPhrase ?? "");
+            return json;
         }
-        return (true, body, (int)resp.StatusCode, resp.ReasonPhrase ?? "");
     }
 
     private static bool IsValidUnit(string unit)
